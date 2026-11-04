@@ -1,23 +1,19 @@
 
-# PARTIE I du cours (diapos 1 à \~120) : fondations — à lire AVANT la Partie II
+# PARTIE I du cours
 
-## I.1 Plan du cours et ressources
-
-Le cours est découpé en 5 parties : (I) réseaux monocouches, perceptron multicouche, fonctions d'erreur, optimisation, rétropropagation, régularisation, arrêt précoce (*early stopping*) ; (II) réseaux convolutifs, pooling, partage de poids, réseaux profonds, approximation universelle, apprentissage de représentations ; (III) apprentissage semi-supervisé, pré-entraînement non supervisé, dropout, transfert, adaptation de domaine, auto-encodeurs ; (IV) réseaux récurrents, modèles génératifs profonds, GAN, machines de Boltzmann ; (V) mécanismes d'attention, multi-head attention, architecture Transformer. Les travaux pratiques utilisent **PyTorch**. Références citées : Hastie-Tibshirani-Friedman, Vapnik, Goodfellow-Bengio-Courville, Bishop, Mitchell, Bennani (*Apprentissage connexionniste*).
-
-## I.2 Motivation : ce que fait le deep learning aujourd'hui
+## Motivation : ce que fait le deep learning aujourd'hui
 
 Les premières diapos sont une démonstration d'applications, pas du contenu à calculer : détection et segmentation d'objets, comptage de foules, reconnaissance faciale (DeepFace), voitures autonomes, **diagnostic médical** (classification de cancers de la peau au niveau d'un dermatologue, *Nature* 2017 ; modèles de langage médicaux type Med-Gemini), assistants juridiques, traduction automatique (DeepL), ChatGPT (*Generative Pre-trained Transformer*), DeepDream, jeux de Go. Message : les réseaux de neurones profonds obtiennent des résultats spectaculaires dans la perception (vision, parole) et le langage.
 
 Le cours situe aussi le **prix Turing 2018** (LeCun, Hinton, Bengio) et les **prix Nobel 2024** de physique et de chimie liés à l'IA.
 
-## I.3 Place du deep learning dans l'IA (taxonomie)
+## Place du deep learning dans l'IA
 
 Emboîtement : **Deep Learning ⊂ Machine Learning ⊂ Intelligence artificielle**. Les grands domaines de l'IA vus dans le cours : algorithmique de l'IA (logique, recherche heuristique, planification) ; systèmes multi-agents ; robotique ; représentation des connaissances ; traitement automatique du langage ; interaction homme-machine ; vision et reconnaissance des formes ; **apprentissage automatique**.
 
 Paradigmes d'apprentissage : **supervisé** (on connaît la cible d pour chaque x), **non supervisé** (pas de cible, on cherche la structure des données), **par renforcement** (récompenses), **par transfert / adaptation de domaine**. Les réseaux de neurones, les méthodes à noyaux, les méthodes bayésiennes en font partie.
 
-## I.4 Qu'est-ce que le Machine Learning ? (diapos 37–46)
+## Qu'est-ce que le Machine Learning ?
 
 Une tâche = apprendre une fonction qui transforme une **entrée** en **sortie** : classer un chiffre manuscrit, prédire le mot suivant, choisir le prochain coup au Go, segmenter une image, établir un diagnostic. Image géométrique du cours : le modèle réalise un « morphing » de l'espace d'entrée X vers l'espace de sortie Y, exprimé comme une **suite de transformations géométriques simples (les couches)**.
 
@@ -55,54 +51,58 @@ Petit point sur la rétropropagation :
 - Une fois que l'erreur a été rétrofusée à travers tout le réseau et que chaque neurone connaît son $\delta$, on utilise un algorithme d'optimisation (comme la descente de gradient) pour modifier tous les poids de connexions du réseau :
    $$\text{Nouveau poids} = \text{Ancien poids} - (\text{taux d'apprentissage}) \times (\text{responsabilité de l'erreur})$$
 
-### Pourquoi ce grand retour ?
-
-- **GPU** (processeurs graphiques) utilisés en parallèle du CPU comme coprocesseurs pour accélérer massivement les calculs matriciels (ex. NVIDIA DGX-1).
-- **Big Data** : explosion exponentielle de la quantité de données disponibles.
-- **Algorithmes et architectures** (convolution, ReLU, initialisation, etc.).
-
 ### Apprentissage dans les réseaux profonds : l'enjeu
 
-Construire un espace de caractéristiques, c'est ce que font les noyaux dans les SVM ou les couches cachées d'un MLP, mais ici l'espace de représentation est construit par une architecture profonde. Difficultés (déjà vues en Partie II, section 15) : gradient qui se diffuse mal vers les premières couches, peu de données étiquetées, plus de minima locaux. D'où l'intérêt de l'apprentissage non supervisé couche par couche.
+Construire un espace de caractéristiques, c'est ce que font les noyaux dans les SVM ou les couches cachées d'un MLP, mais ici l'espace de représentation est construit par une architecture profonde. Difficultés : gradient qui se diffuse mal vers les premières couches, peu de données étiquetées, plus de minima locaux. D'où l'intérêt de l'apprentissage non supervisé couche par couche.
+
+Petit point sur le SVM :
+- le but d'un SVM est de tracer une ligne (en 2D), un plan (en 3D) ou un hyperplan (en dimension supérieure) pour séparer ces deux classes de manière optimale
+- contrairement au Perceptron (qui s'arrête dès qu'il trouve une frontière qui sépare les données, quitte à ce qu'elle soit collée à un point), le SVM cherche la frontière qui maximise la marge : il s'installe le plus loin possible des points des deux classes
+- les points qui se trouvent le plus près de la frontière et qui servent à « caler » cette séparation s'appellent les vecteurs de support
+- dans un SVM, on utilise des fonctions mathématiques (les noyaux) pour projeter les données dans un espace où elles sont faciles à séparer.
+- dans un MLP (réseau de neurones multicouches), ce sont les couches cachées qui réalisent cette transformation en tordant et en remodelant l'espace d'entrée pour construire elles-mêmes cet espace de caractéristiques abstrait.
 
 ---
 
-## I.5 Le neurone formel (diapos \~66–72)
+## Le neurone formel
 
 ### Motivation biologique et ses limites
 
-Les organismes vivants, même primitifs (insectes), réalisent des tâches complexes (orientation, communication, comportement social). Leur puissance vient de la **connexion massive** (≈10¹⁴ connexions chez l'humain) d'un **grand nombre d'unités simples** (≈10¹¹ neurones). L'idée initiale (années 1940) était la neuromimétique, mais la vision de l'époque était **simpliste** et la réalité biologique est plus complexe. En revanche, l'idée s'est avérée très féconde en mathématiques et en ingénierie : le neurone artificiel est **un modèle, pas une copie**, du neurone biologique.
+Les organismes vivants réalisent des tâches complexes (orientation, communication, comportement social). Leur puissance vient de la **connexion massive** (≈10¹⁴ connexions chez l'humain) d'un **grand nombre d'unités simples** (≈10¹¹ neurones). L'idée initiale (années 1940) était la neuromimétique, l'idée s'est avérée très féconde en mathématiques et en ingénierie : le neurone artificiel est **un modèle, pas une copie**, du neurone biologique.
 
-### Définition (McCulloch & Pitts, 1943)
+### Définition
 
 Un **neurone formel** est une unité de calcul qui reçoit des données d'entrée sous forme de vecteur et produit une **sortie réelle**, fonction des entrées et des poids des connexions. C'est un processeur élémentaire caractérisé par : signaux d'entrée ; poids des connexions ; fonction d'activation ; état d'activation interne ; fonction de transition ; état de sortie.
 
-```
-Activation :  a = w₀ + Σ_{i=1}^{D} w_i x_i = wᵀ x   (avec x₀ = 1 : unité de biais)
-Sortie     :  y = f(a)
-```
+
+- Activation :  $a = w_0 + \sum_{i=1}^{D} w_i x_i = w^T x$   (avec $x_0 = 1$ : unité de biais)
+- Sortie     :  y = f(a)
+
 
 Le poids w₀ du **biais** permet de décaler la frontière de décision (sans biais, l'hyperplan passe obligatoirement par l'origine — voir les figures « sans biais / avec biais » de l'Adaline).
 
 ### Fonctions d'activation
 
-Seuil (échelon), linéaire, sigmoïde, tanh, ReLU (voir Partie II, section 5). **Neurone « distance »** : au lieu d'un produit scalaire, le neurone calcule une distance entre l'entrée et son vecteur de poids (famille des fonctions à base radiale, RBF) — le cours n'en montre que le titre dans l'extrait lu ; à compléter avec tes notes.
+Seuil (échelon), linéaire, sigmoïde, tanh, ReLU (voir Partie II, section 5). **Neurone « distance »** : au lieu d'un produit scalaire, le neurone calcule une distance entre l'entrée et son vecteur de poids (famille des fonctions à base radiale, RBF)
 
 ### Réseau de neurones
 
-**Définition** : un réseau de neurones est un **graphe orienté valué** constitué d'unités (automates) réalisant des calculs élémentaires, structurées en couches successives, qui échangent de l'information par des connexions. Caractéristiques : architecture **massivement parallèle** ; coopération de nombreuses unités simples ; un réseau est caractérisé par son **architecture** (graphe de connexions) et les **fonctions de ses éléments**.
+**Définition** : un réseau de neurones est un **graphe orienté valué** constitué d'unités réalisant des calculs élémentaires, structurées en couches successives, qui échangent de l'information par des connexions. Caractéristiques : architecture **parallèle** ; coopération de nombreuses unités simples ; un réseau est caractérisé par son **architecture** (graphe de connexions) et les **fonctions de ses éléments**.
 
 ---
 
-## I.6 L'Adaline (Widrow & Hoff, 1960) (diapos \~73–104)
+## L'Adaline
 
 **Adaline = Adaptive Linear Element** (Stanford, Bernard Widrow). Un neurone **linéaire** adaptatif ; l'unité x₀ = 1 est l'**unité de biais**.
 
 ### Modèle pour la discrimination à 2 classes
+L'objectif est de séparer des données en deux catégories distinctes, notées $\mathcal{C}_1$ et $\mathcal{C}_2$.
+Pour ce faire, le modèle calcule une valeur globale via la formule : 
+$$\psi(x, w) = w_0 + w^T x$$
+- $\psi(x, w) > 0 \quad \text{si} \quad x \in \mathcal{C}_1$
+- $\psi(x, w) < 0 \quad \text{si} \quad x \in \mathcal{C}_2$
+- $\psi(x, w) = 0 \quad \text{: frontière de décision (hyperplan)}$
 
-```
-ψ(x, w) = w₀ + wᵀ x   →   > 0 si x ∈ C₁ ;  < 0 si x ∈ C₂ ;  = 0 : frontière (hyperplan)
-```
 
 Codage des cibles : d = +1 pour C₁, d = −1 pour C₂. La **sortie calculée y = wᵀx est linéaire** (pas de seuil pendant l'apprentissage) ; la décision se fait sur le signe.
 
@@ -110,22 +110,20 @@ Codage des cibles : d = +1 pour C₁, d = −1 pour C₂. La **sortie calculée 
 
 Si z(n) = (x(n), d(n)) est l'exemple considéré à l'itération n :
 
-```
-Erreur quadratique instantanée :  R̃(n)(w) = ( d(n) − wᵀ x(n) )²
-Erreur quadratique moyenne (MSE) : R̃(w) = (1/N) Σ_{n=1}^{N} R̃(n)(w)
-```
+
+- **Erreur quadratique instantanée** :  $R̃(n)(w) = ( d(n) − wᵀ x(n) )²$ (C'est l'erreur commise par le modèle pour un seul exemple $n$)
+- **Erreur quadratique moyenne (MSE)** : $R̃(w) = (1/N) Σ_{n=1}^{N} R̃(n)(w)$ (C'est la moyenne de toutes les erreurs instantanées commises sur l'ensemble des $N$ exemples du jeu de données)
+
 
 ### Règle d'apprentissage : descente de gradient stochastique
 
 Principe (plus grande pente) : à l'instant t, les poids valent w(t) ; on présente l'exemple (x(n), d(n)) et on corrige :
 
-```
-w(t+1) = w(t) − ε(t) · ∇_w R̃(n)(w)
+$w(t+1) = w(t) − ε(t) · ∇_w R̃(n)(w)$
 
-Dérivation :  ∇_w R̃(n) = ∂/∂w ( d − wᵀx )² = 2 ( d − wᵀx ) · (−x) = −2 ( d − wᵀx ) x
+Dérivation :  $∇_w R̃(n) = ∂/∂w ( d − wᵀx )² = 2 ( d − wᵀx ) · (−x) = −2 ( d − wᵀx ) x$
 
-Donc :  w(t+1) = w(t) + 2ε(t) ( d(n) − y(n) ) x(n)      (le 2 est absorbé dans ε)
-```
+Donc :  $w(t+1) = w(t) + 2ε(t) ( d(n) − y(n) ) x(n)$      (le 2 est absorbé dans ε)
 
 Interprétation : on corrige les poids **proportionnellement à l'erreur (d − y)** et à l'entrée x. Si l'erreur est nulle, rien ne bouge. Cette règle s'appelle **règle du gradient stochastique**, **règle de Widrow-Hoff**, **règle delta**, ou **µ-LMS (Least Mean Square)**.
 
@@ -138,13 +136,13 @@ Interprétation : on corrige les poids **proportionnellement à l'erreur (d − 
 5. Adapter les poids : w ← w − ε(t) ∇R̃(n).
 6. Répéter de 2 à 5 jusqu'à obtenir une erreur acceptable.
 
-### Exemple : apprendre la fonction OU (diapos 101–104)
+### Exemple : apprendre la fonction OU
 
 Table de vérité en codage ±1 : (1,1)→+1 ; (1,−1)→+1 ; (−1,1)→+1 ; (−1,−1)→−1. On ajoute l'entrée de biais x₀ = 1 et on cherche w₀, w₁, w₂ tels que la sortie a = w₀ + w₁x₁ + w₂x₂ ait le bon signe. Après apprentissage, la droite **w₁x₁ + w₂x₂ + w₀ = 0** sépare l'unique point négatif (−1,−1) des trois points positifs dans le plan (x₁, x₂). Une telle droite existe : le problème est **linéairement séparable**.
 
 ### Limites : séparabilité linéaire
 
-**Définition** : deux classes d'objets décrites dans un espace de dimension n sont **linéairement séparables** si elles se trouvent de part et d'autre d'un hyperplan de l'espace de représentation. Un Adaline (ou un perceptron) ne peut résoudre que des problèmes linéairement séparables : par exemple le **XOR** est impossible (c'est la critique de Minsky & Papert, 1969).
+**Définition** : deux classes d'objets décrites dans un espace de dimension n sont **linéairement séparables** si elles se trouvent de part et d'autre d'un hyperplan de l'espace de représentation. Un Adaline (ou un perceptron) ne peut résoudre que des problèmes linéairement séparables : par exemple le **XOR** est impossible.
 
 **Contournement 1 — prétraitement polynomial** : on ajoute des entrées non linéaires (x, x², produits…) devant l'Adaline ; dans le nouvel espace, une frontière devient linéaire alors qu'elle est une **ellipse** dans l'espace d'origine. Mais il faut choisir les prétraitements à la main.
 
@@ -152,7 +150,7 @@ Table de vérité en codage ±1 : (1,1)→+1 ; (1,−1)→+1 ; (−1,1)→+1 ; (
 
 ---
 
-## I.7 Le Perceptron (Rosenblatt, 1957 / 1962) (diapos \~105–120)
+## Le Perceptron
 
 Le perceptron n'est pas un modèle unique mais une **famille d'algorithmes** : une machine adaptative pour des problèmes de **classification (discrimination)**.
 
@@ -160,7 +158,7 @@ Le perceptron n'est pas un modèle unique mais une **famille d'algorithmes** : u
 
 - **La rétine R** : reçoit l'information du monde extérieur.
 - **Les cellules d'association φ\_i** : chaque cellule a une fonction de transition φ\_i : R → ℝ définie sur la rétine (prétraitements fixes, non appris).
-- **La cellule de décision** : ψ(x,w) = f( w₀ + Σ\_{i=1}^{D} w\_i φ\_i(x) ) = f(wᵀφ), avec φ = (1, φ₁(x), …, φ\_D(x)) et f un **échelon** : f = +1 si l'argument ≥ 0, −1 sinon.
+- **La cellule de décision** : $ψ(x,w) = f( w₀ + Σ w\_i * φ\_i(x) ) = f(wᵀφ)$, avec $φ = (1, φ₁(x), …, φ\_D(x))$ et f un **échelon** : f = +1 si l'argument ≥ 0, −1 sinon.
 
 Différence essentielle avec l'Adaline : la sortie passe par le **seuil f** (sortie binaire), et l'erreur est définie à partir de ce seuil.
 
@@ -174,17 +172,15 @@ Cibles d(n) = +1 si x(n) ∈ C₁ ; d(n) = −1 si x(n) ∈ C₂. Un exemple est
 
 **Erreur** : on ne pénalise que les exemples mal classés :
 
-```
-R̃(n)(w) = − d(n) · wᵀφ(x(n))     si x(n) est mal classé (le produit est alors < 0, donc R̃ > 0)
-R̃(w)    = − (1/N) Σ_{n mal classés} d(n) · wᵀφ(x(n))     (critère du perceptron)
-```
+- $R̃(n)(w) = − d(n) · wᵀφ(x(n))$     si x(n) est mal classé (le produit est alors < 0, donc $R̃ > 0$)
+- $R̃(w)    = − (1/N) Σ_{n mal classés} d(n) · wᵀφ(x(n))$     (critère du perceptron)
+
 
 **Gradient et mise à jour** :
 
-```
-∇_w R̃(n) = − d(n) · φ(x(n))
-w(t+1) = w(t) − ε(t) ∇_w R̃(n) = w(t) + ε(t) · d(n) · φ(x(n))     (si mal classé)
-```
+- $∇_w R̃(n) = − d(n) · φ(x(n))$
+- $w(t+1) = w(t) − ε(t) ∇_w R̃(n) = w(t) + ε(t) · d(n) · φ(x(n))$     (si mal classé)
+
 
 Critère d'arrêt : taux de classification satisfaisant.
 
@@ -218,7 +214,7 @@ Si bien classé : aucun changement.
 
 ### Théorème de convergence du perceptron
 
-« **Si un ensemble d'exemples est linéairement séparable, alors l'algorithme d'apprentissage du perceptron converge vers une solution correcte en un nombre fini d'itérations.** » (Rosenblatt 1962 ; Block 1962 ; cf. Arbib 1987). Attention : le théorème ne dit rien si les données ne sont **pas** séparables (l'algorithme oscille indéfiniment), et ne garantit pas la meilleure séparation, seulement **une** séparation.
+« **Si un ensemble d'exemples est linéairement séparable, alors l'algorithme d'apprentissage du perceptron converge vers une solution correcte en un nombre fini d'itérations.** ». Attention : le théorème ne dit rien si les données ne sont **pas** séparables (l'algorithme oscille indéfiniment), et ne garantit pas la meilleure séparation, seulement **une** séparation.
 
 ### Perceptron vs Adaline : synthèse
 
@@ -232,11 +228,11 @@ Si bien classé : aucun changement.
 
 ### Du perceptron au perceptron multicouche
 
-Tous ces modèles sont limités aux problèmes linéairement séparables. La critique de Minsky & Papert (1969) a freiné la recherche ; elle ne concerne que le monocouche. Le **problème d'affectation du crédit** (on ne connaît pas la cible des unités cachées) est résolu par la **rétropropagation du gradient** : c'est le sujet de la Partie II (sections 2 et 8 ci-dessus).
+Tous ces modèles sont limités aux problèmes linéairement séparables. La critique de Minsky & Papert (1969) a freiné la recherche ; elle ne concerne que le monocouche. Le **problème d'affectation du crédit** (on ne connaît pas la cible des unités cachées) est résolu par la **rétropropagation du gradient** : c'est le sujet de la Partie II.
 
 ---
 
-## I.8 Checklist de révision (Partie I)
+## Checklist de révision (Partie I)
 
 - Définir le neurone formel (McCulloch & Pitts) et le rôle du **biais**.
 - Expliquer pourquoi on extrait des **caractéristiques** et ce qu'est la **dimension cachée** (exemple du visage).
