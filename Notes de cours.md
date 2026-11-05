@@ -490,7 +490,7 @@ C'est une descente de gradient **stochastique** (un exemple tiré au hasard à l
 
 ---
 
-## Exemple : le XOR (diapos 28–29)
+## Exemple : le XOR
 
 Données (codage −1/+1) : (1,1)→−1 ; (1,−1)→+1 ; (−1,1)→+1 ; (−1,−1)→−1. Un perceptron simple ne peut pas séparer ces classes (non linéairement séparables).
 
@@ -508,7 +508,7 @@ Construction équivalente que vous pouvez vérifier à la main : h₁ = signe(x�
 
 ---
 
-## 10. Organisation des données (diapos 30–36)
+## 10. Organisation des données
 
 ### Codage des sorties (classification à C classes)
 
@@ -519,9 +519,9 @@ Construction équivalente que vous pouvez vérifier à la main : h₁ = signe(x�
 | **1-parmi-(C−1)** (0/1) | 1 0 | 0 1 | 0 0 |
 | **Thermomètre** (0/1) | 1 1 1 | 0 1 1 | 0 0 1 |
 
-- 1-parmi-C : une sortie par classe, la classe prédite est la sortie maximale.
-- 1-parmi-(C−1) : une sortie de moins (la dernière classe = tout à 0).
-- **Thermomètre** : à utiliser quand les classes sont **ordonnées** (classement de classes).
+- 1-parmi-C : une sortie par classe, la classe prédite est la sortie maximale. Par exemple, pour représenter le Rouge avec le codage $(0/1)$, seul le troisième neurone s'allume : 0 0 1. Pour désigner la classe finale prédite par le modèle, on regarde quel neurone a la sortie maximale
+- 1-parmi-(C−1) : une sortie de moins (la dernière classe = tout à 0). Si tous les neurones de sortie renvoient $0$, le modèle comprend implicitement qu'il s'agit de la dernière classe (celle qui n'a pas de neurone dédié).
+- **Thermomètre** : à utiliser quand les classes sont **ordonnées** (classement de classes). Ce type de codage est utilisé uniquement lorsque les classes possèdent un ordre logique ou une hiérarchie.
 
 ### Normalisation des entrées
 
@@ -529,63 +529,60 @@ Sans normalisation, les variables à grande échelle (ex. altitude en milliers v
 
 Centrer-réduire :
 
-```
-x(n) ← ( x(n) − x̄ ) / σ,    x̄ = (1/N) Σ_n x(n),    σ² = (1/N) Σ_n ( x(n) − x̄ )²
-```
+$x(n) ← ( x(n) − x̄ ) / σ,    x̄ = (1/N) Σ_n x(n),    σ² = (1/N) Σ_n ( x(n) − x̄ )²$
 
-Pourquoi : (1) les entrées centrées-réduites évitent de **saturer** les sigmoïdes (zones où f' ≈ 0) ; (2) la surface d'erreur est plus « ronde » : quand les paramètres ont des échelles différentes, le gradient du plus grand domine la mise à jour (ellipses allongées, trajectoire en zigzag) ; avec des échelles égales, tous les paramètres sont mis à jour dans des proportions comparables.
+Pourquoi :
+1) les entrées centrées-réduites évitent de **saturer** les sigmoïdes (zones où f' ≈ 0) ;
+2) la surface d'erreur est plus « ronde » : quand les paramètres ont des échelles différentes, le gradient du plus grand domine la mise à jour (ellipses allongées, trajectoire en zigzag) ; avec des échelles égales, tous les paramètres sont mis à jour dans des proportions comparables.
 
 ### Initialisation des poids
 
-Objectif : que l'activation `a_i = Σ_{j∈Amont(i)} w_ij x_j` ait une variance ≈ 1 pour ne pas saturer la sigmoïde dès le départ.
+Objectif : que l'activation `a_i = Σ_{j∈Amont(i)} w_ij x_j` ait une variance ≈ 1 pour ne pas saturer la sigmoïde dès le départ (car activation ( = x dans la formule de la sigmoïde) importante (négative ou postive) implique sigmoide aplatie car tend vers 0 ou 1)
 
 Hypothèses : entrées centrées-réduites (E\[x\]=0, Var\[x\]=1), poids indépendants des entrées et de moyenne nulle (E\[w\]=0).
 
-```
-E[a_i]   = Σ_j E[w_ij] E[x_j] = 0
-Var[a_i] = Σ_j E[w_ij²] E[x_j²] = |Amont(i)| · σ²[w_ij]
-```
+$E[a_i]   = Σ_j E[w_ij] E[x_j] = 0$
+
+$Var[a_i] = Σ_j E[w_ij²] E[x_j²] = |Amont(i)| · σ²[w_ij]$
 
 On veut `Var[a_i] = 1`, donc :
 
-```
-σ²[w_ij] = 1 / |Amont(i)|     ⟹     σ[w_ij] ∝ |Amont(i)|^(−1/2)
-```
+$σ²[w_ij] = 1 / |Amont(i)|     ⟹     σ[w_ij] ∝ |Amont(i)|^(−1/2)$
 
 On tire donc les poids dans une loi uniforme :
 
-```
-w_ij ∈ [ −k/√|Amont(i)| , +k/√|Amont(i)| ],   0,5 < k < 2
-```
+$w_ij ∈ [ −k/√|Amont(i)| , +k/√|Amont(i)| ],   0,5 < k < 2$
 
 Avec la fonction recommandée `f(x) = 1,71·tanh(2x/3)`. Moins il y a d'entrées, plus les poids peuvent être grands, et inversement. *Ne jamais initialiser tous les poids à 0 ou à la même valeur* : toutes les unités cachées resteraient identiques (symétrie).
 
 ---
 
-## 11. Approximation universelle et profondeur (diapos 37–43)
+## Approximation universelle et profondeur
 
-- **Construction des diapos 40** : une sigmoïde seule = une « marche » dans une direction ; la somme de 2 sigmoïdes = une **crête** (ridge) ; la somme de 2 crêtes = une fonction avec un **maximum** ; une sigmoïde appliquée dessus donne une **réponse localisée** (« bosse »). En combinant linéairement ces bosses, on approche toute fonction continue.
 - **Théorème de Hornik (1989)** : un réseau à trois couches (une cachée) avec sorties linéaires et un nombre suffisant d'unités cachées saturantes croissantes peut approcher arbitrairement toute fonction mesurable bornée d'un espace de dimension finie vers un autre. **Un RNA est un approximateur universel.**
 - **Limites** : théorème **purement existentiel** — il ne dit ni combien de neurones cacher, ni comment trouver les poids, ni que l'apprentissage convergera. En pratique, plusieurs couches et sorties non linéaires peuvent être plus commodes.
-- **Intérêt de la profondeur** (GINN, diapos 41–42) : un réseau à 3 couches cachées de 16 neurones apprend à classer chaque pixel (x,y) d'une image (noir/blanc) ; les couches successives plient et déforment l'espace pour produire des frontières complexes avec peu d'unités. Un réseau profond est généralement plus compact qu'un réseau peu profond mais très large.
+- **Intérêt de la profondeur** : un réseau à 3 couches cachées de 16 neurones apprend à classer chaque pixel (x,y) d'une image (noir/blanc) ; les couches successives plient et déforment l'espace pour produire des frontières complexes avec peu d'unités. Un réseau profond est généralement plus compact qu'un réseau peu profond mais très large.
 
 ---
 
-## 12. Liens avec l'analyse de données (diapos 44–47)
+## Liens avec l'analyse de données
 
 ### MLP et ACP (PCA)
 
-Un **auto-encodeur** (réseau auto-associatif) est entraîné à reproduire son entrée : `d = x`. Architecture : entrée n → **couche de codage** (peu d'unités) → sortie n ; l'**encodeur** compresse, le **décodeur** reconstruit. Avec des sorties **linéaires**, il réalise une transformation de **Karhunen-Loève** : il est équivalent à une **ACP** (Bourlard & Kamp 1988 ; Baldi & Hornik 1989) — la couche cachée engendre le même sous-espace que les premières composantes principales.
+- Un **auto-encodeur** (réseau auto-associatif) est entraîné à reproduire son entrée : `d = x`
+- Architecture : entrée n → **couche de codage** (peu d'unités) → sortie n
+- L'**encodeur** compresse, le **décodeur** reconstruit
+- Avec des sorties **linéaires**, il réalise une transformation de **Karhunen-Loève** : il est équivalent à une **ACP** - la couche cachée engendre le même sous-espace que les premières composantes principales.
 
-Avec des activations **non linéaires**, l'auto-encodeur capte des structures que l'ACP linéaire ne voit pas (diapos 45–46 : sur MNIST ou des données textuelles, les classes sont mieux séparées dans l'espace du codage que sur les 2 premières composantes).
+Avec des activations **non linéaires**, l'auto-encodeur capte des structures que l'ACP linéaire ne voit pas (sur MNIST ou des données textuelles, les classes sont mieux séparées dans l'espace du codage que sur les 2 premières composantes).
 
 ### MLP et LDA (analyse discriminante)
 
-Gallinari et al. (1991) : un MLP entraîné pour classer effectue une analyse discriminante ; à chaque couche cachée, les classes sont de plus en plus séparées (diapo 47 : entrée → cachée 1 → cachée 2 → sortie, les nuages de classes se séparent progressivement).
+Un MLP entraîné pour classer effectue une analyse discriminante ; à chaque couche cachée, les classes sont de plus en plus séparées (diapo 47 : entrée → cachée 1 → cachée 2 → sortie, les nuages de classes se séparent progressivement).
 
 ---
 
-## 13. Réseaux structurés (diapos 48–60)
+## Réseaux structurés
 
 Idée générale : **contraindre l'architecture** (connexions locales, poids partagés, récurrence) pour réduire le nombre de paramètres et injecter de la connaissance sur le problème.
 
@@ -595,9 +592,9 @@ Chaque unité d'une couche est reliée à toutes celles de la suivante. Beaucoup
 
 ### Réseaux récurrents simples avec contexte
 
-- **Elman (1990)** : les sorties de la couche **cachée** à l'instant t−1 sont recopiées dans des **unités de contexte** `c(t−1)` qui servent d'entrées supplémentaires à t. Mémoire du passé interne.
-- **Jordan (1992)** : ce sont les **sorties du réseau** `y(t−1)` qui sont réinjectées en contexte.
-- **NETtalk (Sejnowski & Rosenberg, 1987)** : synthèse de parole (texte → phonèmes). Le réseau regarde une **fenêtre glissante de lettres** (la lettre centrale + son contexte) et prédit le phonème de la lettre centrale.
+- **Elman** : les sorties de la couche **cachée** à l'instant t−1 sont recopiées dans des **unités de contexte** `c(t−1)` qui servent d'entrées supplémentaires à t. Mémoire du passé interne.
+- **Jordan** : ce sont les **sorties du réseau** `y(t−1)` qui sont réinjectées en contexte.
+- **NETtalk** : synthèse de parole (texte → phonèmes). Le réseau regarde une **fenêtre glissante de lettres** (la lettre centrale + son contexte) et prédit le phonème de la lettre centrale.
 
 ### Réseaux récurrents (RNN) (diapos 52–54)
 
