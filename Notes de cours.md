@@ -600,29 +600,38 @@ Chaque unité d'une couche est reliée à toutes celles de la suivante. Beaucoup
 
 Un RNN a une **boucle** : l'information persiste d'un pas de temps au suivant.
 
-```
-h_t = f_W( h_{t−1}, x_t )         (nouvel état = fonction de l'ancien état et de l'entrée)
-y_t = f( h_t )                    (sortie au temps t)
-```
+$h_t = f_W( h_{t−1}, x_t )$ -> (nouvel état = fonction de l'ancien état et de l'entrée)
+$y_t = f( h_t )$ -> (sortie au temps t)
 
 Mêmes poids W à chaque pas de temps. **Dépliage (unrolling)** : un RNN = plusieurs copies du même réseau, chacune transmettant un message à la suivante.
 
-Avantages : traite des **séquences de longueur variable** ; la complexité (nb de paramètres) ne dépend pas de la longueur ; poids réutilisés. **Inconvénient majeur** : difficultés d'entraînement dues aux **gradients explosifs et évanescents** (la rétropropagation dans le temps multiplie à répétition des dérivées/matrices : si leur norme est < 1 le gradient disparaît, si > 1 il explose). Le RNN opère de façon « **multiplicative** » (tanh répété).
+**Avantages** :
+- traite des **séquences de longueur variable** (contrairement aux réseaux classiques (comme le MLP) qui exigent une taille d'entrée fixe, un RNN traite les éléments de la séquence un par un, qu'elle fasse 3 ou 100 mots);
+- la complexité (nb de paramètres) ne dépend pas de la longueur, il est fixe ;
+- poids réutilisés : même fonction et les mêmes poids à chaque pas de temps
 
-### LSTM et GRU (diapos 55–57)
+**Inconvénient majeur** :
+- La multiplication en chaîne (effet multiplicatif) : Pour faire apprendre un RNN, l'erreur doit être rétrofusée à travers le temps (Backpropagation Through Time). Mathématiquement, cela revient à multiplier à répétition les mêmes matrices de poids et de dérivées (comme la fonction tanh) pour chaque pas de temps de la séquence.   
+- le gradient évanescent : Si les valeurs de ces matrices sont inférieures à 1, le fait de les multiplier en boucle fait que le gradient devient presque égal à zéro au bout de quelques pas. Le réseau devient incapable d'apprendre des dépendances à long terme
+- le gradient explosif : À l'inverse, si les valeurs sont supérieures à 1, les multiplications répétées font croître le gradient de façon exponentielle jusqu'à l'infini, ce qui fait planter l'algorithme (les valeurs deviennent NaN)
 
-Deux cellules « à portes », qui traitent l'information de façon **additive** : **LSTM** (Hochreiter & Schmidhuber 1997) et **GRU** (Cho et al. 2014). Une **porte sigmoïde** sort des nombres entre 0 et 1 : la proportion de chaque composante qui « passe » (0 = rien, 1 = tout). Ex. `f_t = σ(W_f·[h_{t−1}, x_t] + b_f)`.
+### LSTM et GRU
+
+Deux cellules « à portes », qui traitent l'information de façon **additive** : **LSTM** et **GRU**. Une **porte sigmoïde** sort des nombres entre 0 et 1 : la proportion de chaque composante qui « passe » (0 = rien, 1 = tout). Ex. `f_t = σ(W_f·[h_{t−1}, x_t] + b_f)`.
 
 Le cœur du LSTM est l'**état de cellule C\_t** : mémoire à long terme, qui traverse les pas de temps avec peu d'interactions linéaires, d'où un **flux de gradient ininterrompu** (les erreurs passées continuent d'influencer l'apprentissage). Trois portes :
 
-```
-Porte d'oubli (forget) :  f_t = σ( W_f·[h_{t−1}, x_t] + b_f )     → quelle part de C_{t−1} on garde
-Porte d'entrée (input) :  i_t = σ( W_i·[h_{t−1}, x_t] + b_i )     → quelle part de la nouveauté on accepte
-Candidat mémoire       :  C̃_t = tanh( W_C·[h_{t−1}, x_t] + b_C )
-Mise à jour de l'état  :  C_t = f_t ∗ C_{t−1} + i_t ∗ C̃_t           (∗ = produit terme à terme)
-Porte de sortie        :  o_t = σ( W_o·[h_{t−1}, x_t] + b_o )
-Sortie                 :  h_t = o_t ∗ tanh( C_t )
-```
+- Porte d'oubli (forget) :  $f_t = σ( W_f·[h_{t−1}, x_t] + b_f )$     → quelle part de C_{t−1} on garde
+
+- Porte d'entrée (input) :  $i_t = σ( W_i·[h_{t−1}, x_t] + b_i )$     → quelle part de la nouveauté on accepte
+
+- Candidat mémoire       :  $C̃_t = tanh( W_C·[h_{t−1}, x_t] + b_C )$ → crée une nouvelle information potentielle à ajouter
+
+- Mise à jour de l'état  :  $C_t = f_t ∗ C_{t−1} + i_t ∗ C̃_t$           (∗ = produit terme à terme) → le plus important : on combine ce qu'on a gardé du passé et accepté du présent par addition
+
+- Porte de sortie        :  $o_t = σ( W_o·[h_{t−1}, x_t] + b_o )$ → filtre l'état de la cellule mis à jour pour décider quelle partie de la mémoire sera affichée comme sortie
+
+- Sortie                 :  $h_t = o_t ∗ tanh( C_t )$
 
 La mise à jour **additive** de C\_t est la clé contre le gradient évanescent.
 
@@ -630,11 +639,11 @@ La mise à jour **additive** de C\_t est la clé contre le gradient évanescent.
 
 - **Connexions locales** : chaque unité cachée ne « voit » qu'un **champ récepteur** (petite zone de l'entrée), ce qui réduit fortement le nombre de poids.
 - **Poids partagés (contraints)** : le **même filtre** (noyau de convolution) est appliqué à toutes les positions → des **extracteurs de caractéristiques** (feature extractors) qui détectent la même caractéristique locale partout. Très peu de paramètres libres.
-- **TDNN** (Time Delay Neural Network, Waibel et al. 1987) : même principe appliqué à l'axe **temps** pour la reconnaissance de phonèmes sur un spectrogramme (fréquence × temps) ; le nombre de positions est environ `(N − d)/s + 1` pour une fenêtre d, un pas s.
+- **TDNN** (Time Delay Neural Network) : même principe appliqué à l'axe **temps** pour la reconnaissance de phonèmes sur un spectrogramme (fréquence × temps) ; le nombre de positions est environ `(N − d)/s + 1` pour une fenêtre d, un pas s.
 
 ---
-
-## 14. Réseaux convolutifs (CNN) (diapos 61–92)
+MATHURA
+## Réseaux convolutifs (CNN)
 
 ### Architecture type (LeNet, diapo 62)
 
