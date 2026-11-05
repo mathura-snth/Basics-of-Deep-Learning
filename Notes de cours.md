@@ -247,7 +247,7 @@ Tous ces modèles sont limités aux problèmes linéairement séparables. La cri
 
 # PARTIE II du cours
 
-## 1. Rappels : Perceptron vs Adaline (diapo 2)
+## Rappels : Perceptron vs Adaline
 
 Problème à 2 classes (A et B), séparées par un hyperplan.
 
@@ -258,39 +258,29 @@ Problème à 2 classes (A et B), séparées par un hyperplan.
 
 ---
 
-## 2. Pourquoi les réseaux multicouches ? (diapos 3–4)
+## Pourquoi les réseaux multicouches ?
 
 ### Le problème de l'affectation du crédit (*credit assignment problem*)
 
 On a un réseau en couches et un ensemble d'exemples entrée-sortie :
 
-```
-D_N = {(x(1),d(1)), ..., (x(N),d(N))},   x(n) ∈ ℝ^D,  d(n) ∈ ℝ^K
-```
+$D_N = {(x(1),d(1)), ..., (x(N),d(N))},   x(n) ∈ ℝ^D,  d(n) ∈ ℝ^K$
 
-- Pour la **couche de sortie** (poids W2), on connaît la cible : on peut appliquer la règle du perceptron.
+- Pour la **couche de sortie** (poids W2), on connaît la cible : on peut appliquer la règle du perceptron (méthode de mise à jour des poids basée sur l'erreur de classification).
 - Pour les **couches cachées** (poids W1), on **ne connaît pas la sortie désirée** des unités cachées : on ne peut donc pas leur appliquer l'algorithme du perceptron. Comment répartir « la faute » de l'erreur de sortie entre les poids de la couche cachée ? C'est le crédit à affecter.
 - **Solution : la rétropropagation du gradient** (*Gradient Back-Propagation*, GBP).
 
-### Histoire (« la cassure post-connexionniste »)
-
-- 1963 : Bryson, Denham, Dreyfuss — idée de la rétropropagation, en théorie du contrôle optimal.
-- Années 80 : on comprend correctement la portée réelle des travaux de Minsky & Papert (qui montraient les limites du perceptron monocouche, par ex. le XOR, mais pas celles des réseaux multicouches).
-- 1986 : « redécouverte » de la rétropropagation par **LeCun**, et par **Rumelhart, Hinton, Williams**.
-
 ---
 
-## 3. Le Perceptron Multi-Couches (MLP) (diapos 5–8)
+## Le Perceptron Multi-Couches (MLP)
 
 ### Théorème de Kolmogorov (1957)
 
-Toute fonction continue `f(x)` définie sur \[0,1\]ⁿ peut s'écrire :
+Toute fonction continue `f(x)` définie sur \[0,1\]ⁿ (à $n$ variables d'entrée) peut s'exprimée sous forme d'une combinaison de fonctions plus simples qui ne dépendent que d'une seule variable :
 
-```
-f(x) = Σ_{i=1}^{2n+1}  F_i( Σ_{j=1}^{n}  G_ij(x_j) )
-```
+$f(x) = Σ_{i=1}^{2n+1}  F_i( Σ_{j=1}^{n}  G_ij(x_j) )$
 
-où les `G_ij` et `F_i` sont des fonctions continues d'**une seule variable**. Interprétation réseau : une couche cachée de 2n+1 groupes d'unités qui calculent les G, puis des sommes, puis les F. Un réseau de neurones peut approximer les `G_ij` et `F_i` avec des fonctions de la forme `f(w₀ + wᵀx)`.
+où les `G_ij` et `F_i` sont des fonctions continues d'**une seule variable**. Interprétation réseau : une couche *cachée* de 2n+1 groupes d'unités qui calculent les G, puis des sommes, puis les F. Un réseau de neurones peut approximer les `G_ij` et `F_i` avec des fonctions de la forme `f(w₀ + wᵀx)`.
 
 Exemple de la diapo : `f(x) = ¼[(x₁+x₂)² − (x₁−x₂)²]`. En développant : (x₁+x₂)² − (x₁−x₂)² = 4x₁x₂, donc f(x) = **x₁·x₂**. Le produit de deux variables se décompose en fonctions d'une seule variable (des carrés) et de sommes.
 
@@ -307,39 +297,36 @@ Exemple de la diapo : `f(x) = ¼[(x₁+x₂)² − (x₁−x₂)²]`. En dévelo
 - `Aval(k)` : ensemble des unités qui **utilisent la sortie** de k comme entrée.
 - Exemple diapo 7 (unités 0–5 entrées, 6–9 cachées, 10–11 sorties) : Amont(7) = {0,1,2,3,4,5}, Aval(7) = {10,11}, Amont(2) = ∅ (entrée), Aval(11) = ∅ (sortie).
 
-### Calcul avant (propagation, diapo 13)
+### Calcul avant (propagation)
 
 Unité cachée j (poids de la couche 1, `w_ji^(1)`) :
 
-```
-Activation :  a_j = w_j0^(1) + Σ_{i ∈ Amont(j)} w_ji^(1) · x_i
-Sortie     :  z_j = f(a_j)
-```
+- Activation :  $a_j = w_j0^(1) + Σ_{i ∈ Amont(j)} w_ji^(1) · x_i$
+- Sortie     :  $z_j = f(a_j)$
 
 Unité de sortie k (poids de la couche 2) :
 
-```
-a_k = w_k0^(2) + Σ_{j ∈ Amont(k)} w_kj^(2) · z_j
-y_k = f(a_k)
-```
+$a_k = w_k0^(2) + Σ_{j ∈ Amont(k)} w_kj^(2) · z_j$
+$y_k = f(a_k)$
 
 En combinant :
 
-```
-y_k = f( w_k0^(2) + Σ_{j=1}^{M} w_kj^(2) · f( w_j0^(1) + Σ_{i=1}^{D} w_ji^(1) · x_i ) )
-```
+$y_k = f( w_k0^(2) + Σ_{j=1}^{M} w_kj^(2) · f( w_j0^(1) + Σ_{i=1}^{D} w_ji^(1) · x_i ) )$
 
 (D entrées, M unités cachées, K sorties ; `w_j0` = poids du biais.) C'est une composition de fonctions : un MLP est une fonction `y(x, w)` paramétrée par les poids.
 
+Conclusion :
+- Mathématiquement, un réseau de neurones multicouches n'est rien d'autre qu'une composition de fonctions (on applique une fonction, puis on réapplique une autre fonction à l'intérieur de la première, et ainsi de suite).
+- Le réseau tout entier forme une grande fonction globale notée $y(x, w)$, dont le comportement dépend entièrement des poids ($w$).
+- L'apprentissage consistera justement à trouver les valeurs idéales de ces poids pour que cette fonction géante transforme correctement l'entrée $x$ en la bonne sortie $y$. 
+
 ---
 
-## 4. Apprendre à partir d'exemples (diapos 9–12)
+## Apprendre à partir d'exemples
 
 ### Risque théorique (erreur de généralisation)
 
-```
-R(w) = ∫ L( y(x,w), d ) dp(x,d)
-```
+$R(w) = ∫ L( y(x,w), d ) dp(x,d)$
 
 - `L` = fonction de perte (loss) mesurant l'écart entre sortie et cible.
 - `p(x,d) = p(x)·p(d|x)` : distribution **fixe mais inconnue**.
@@ -350,9 +337,7 @@ R(w) = ∫ L( y(x,w), d ) dp(x,d)
 
 Principe d'induction : on remplace l'intégrale par une moyenne sur les exemples :
 
-```
-R̃(w) = (1/N) Σ_{n=1}^{N} L( y(x(n), w), d(n) ) = (1/N) Σ_n R(n)(w)
-```
+$R̃(w) = (1/N) Σ_{n=1}^{N} L( y(x(n), w), d(n) ) = (1/N) Σ_n R(n)(w)$
 
 `R(n)(w)` est le **risque empirique local** (l'erreur sur le n-ième exemple). L'apprentissage devient `w* = argmin R̃(w)`.
 
@@ -360,26 +345,25 @@ R̃(w) = (1/N) Σ_{n=1}^{N} L( y(x(n), w), d(n) ) = (1/N) Σ_n R(n)(w)
 
 On met à jour les poids dans la direction opposée au gradient :
 
-```
-w_ji(t+1) = w_ji(t) − ε(t) · ∂R(w)/∂w_ji
-Δw_ji(t) = − ε(t) · ∂R(w)/∂w_ji
-```
+$w_ji(t+1) = w_ji(t) − ε(t) · ∂R(w)/∂w_ji$
+
+$Δw_ji(t) = − ε(t) · ∂R(w)/∂w_ji$
+
+*N.B. : $∂R(w)/∂w_ji$ c'est le gradient, il indique la direction de la plus grande pente ascendante, c'est-à-dire là où l'erreur augmente le plus vite, or nous on veut l'inverse : réduire l'erreur au max*
 
 - `ε` > 0 : pas d'apprentissage (learning rate).
-- Intuition (diapo 12) : si la pente en w₀ est **positive**, on va à **gauche** ; si elle est **négative**, on va à **droite** ; si elle est nulle, on est sur un extremum. Image du skieur : on suit la plus grande pente descendante.
+- Intuition : si la pente en w₀ est **positive**, on va à **gauche** ; si elle est **négative**, on va à **droite** ; si elle est nulle, on est sur un extremum. Image du skieur : on suit la plus grande pente descendante.
 - Si ε est trop grand, on oscille/diverge ; trop petit, la convergence est très lente. Sur une surface non convexe, on peut tomber dans un **minimum local**.
 
 ### Fonction de coût : erreur quadratique moyenne (MSE)
 
-```
-R(w) = (1/N) Σ_n R(n)(w),     R(n)(w) = ½ Σ_{k=1}^{K} ( y_k(n) − d_k(n) )²
-```
+$R(w) = (1/N) Σ_n R(n)(w),     R(n)(w) = ½ Σ_{k=1}^{K} ( y_k(n) − d_k(n) )²$
 
 Le facteur ½ sert uniquement à simplifier la dérivée (le 2 de la puissance s'annule).
 
 ---
 
-## 5. Fonctions de transfert / d'activation (diapos 14–19)
+## Fonctions de transfert / d'activation
 
 | Fonction | Formule | Dérivée | Remarques |
 | --- | --- | --- | --- |
@@ -389,7 +373,7 @@ Le facteur ½ sert uniquement à simplifier la dérivée (le 2 de la puissance s
 
 La fonction d'activation doit être **non linéaire** : sans cela, empiler des couches revient à une seule transformation linéaire. Le choix de dérivées simples (sigmoïde : f' = f(1−f)) rend la rétropropagation peu coûteuse.
 
-### ReLU (Rectified Linear Unit)
+### ReLU (Rectified Linear Unit) -> f(x) = max(0,x)
 
 **Avantages :**
 
@@ -411,7 +395,7 @@ La fonction d'activation doit être **non linéaire** : sans cela, empiler des c
 
 ---
 
-## 6. Frontières de décision (diapos 20–21)
+## Frontières de décision
 
 Le pouvoir de représentation dépend du nombre de couches :
 
@@ -423,16 +407,13 @@ Les unités cachées de la 1ʳᵉ couche découpent l'espace en hyperplans ; la 
 
 ---
 
-## 7. Fonctions d'erreur (diapo 22)
+## Fonctions d'erreur
 
-```
-MSE :              R_mse(w) = ½ Σ_n ( d(n) − y(n) )²
-MSE pondérée :     R(w) = Σ_n (d(n) − y(n))ᵀ Σ⁻¹ (d(n) − y(n)),   avec Σ = (1/N) Σ_n (d(n) − y(n))(d(n) − y(n))ᵀ
-Multiple logistique (entropie croisée binaire) :
-                   R(w) = Σ_n Σ_i [ d_i log(d_i/y_i) + (1−d_i) log((1−d_i)/(1−y_i)) ]
-Log-vraisemblance (softmax) :
-                   R(w) = Σ_n d(n) log( d(n)/p(n) ),   p(n) = e^{y(n)} / Σ_j e^{y(j)}
-```
+- MSE : $R_mse(w) = ½ Σ_n ( d(n) − y(n) )²$
+- MSE pondérée : $R(w) = Σ_n (d(n) − y(n))ᵀ Σ⁻¹ (d(n) − y(n))$,   avec $Σ = (1/N) Σ_n (d(n) − y(n))(d(n) − y(n))ᵀ$
+- Multiple logistique (entropie croisée binaire) : $R(w) = Σ_n Σ_i [ d_i log(d_i/y_i) + (1−d_i) log((1−d_i)/(1−y_i)) ]$
+- Log-vraisemblance (softmax) : $R(w) = Σ_n d(n) log( d(n)/p(n) ),   p(n) = e^{y(n)} / Σ_j e^{y(j)}$
+
 
 - **MSE** : régression, ou classification simple.
 - **MSE pondérée** : tient compte de la covariance des erreurs (distance de Mahalanobis).
@@ -440,44 +421,53 @@ Log-vraisemblance (softmax) :
 
 ---
 
-## 8. La rétropropagation du gradient (GBP) (diapos 23–27) — LE point central
+## La rétropropagation du gradient
 
 ### Notations
 
-- `s_i` : sortie de l'unité i (`s_i = x_i` pour une entrée), `a_j = Σ_{i∈Amont(j)} w_ji s_i` : activation de j, `s_j = f(a_j)`.
-- Coût sur un exemple : `R(n) = ½ Σ_k (y_k − d_k)²`.
+- $s_i$ : C'est la sortie d'un neurone $i$. Si c'est un neurone d'entrée, c'est simplement la donnée brute $x_i$.
+- $a_j$ : L'activation du neurone $j$, c'est-à-dire la somme pondérée de toutes ses entrées en amont ($a_j = \sum w_{ji} s_i$).
+- $s_j = f(a_j)$ : La sortie finale du neurone $j$ après application de la fonction d'activation non linéaire $f$.
+- $R(n)$ : Le coût (l'erreur) commis sur un exemple $n$, mesuré ici par l'erreur quadratique $\frac{1}{2} \sum_k (y_k - d_k)^2$.  
 
 ### Dérivation pas à pas
+Pour savoir de combien l'erreur $R$ change lorsqu'on modifie un poids précis $w_{ji}$.
 
 **Étape 1 — règle de la chaîne.** Le poids `w_ji` n'agit sur R que via l'activation `a_j` :
 
-```
-∂R/∂w_ji = (∂R/∂a_j) · (∂a_j/∂w_ji) = δ_j · s_i
-```
+$∂R/∂w_ji = (∂R/∂a_j) · (∂a_j/∂w_ji) = δ_j · s_i$
 
-avec `δ_j = ∂R/∂a_j` (le « delta » de l'unité j) et `∂a_j/∂w_ji = s_i`.
+avec $δ_j = ∂R/∂a_j$ (le « delta » de l'unité j) et $∂a_j/∂w_ji = s_i$.
+
+Donc on a : $$\frac{\partial R}{\partial w_{ji}} = \delta_j \cdot s_i$$
 
 **Étape 2 — delta d'une unité de sortie (j ∈ Output).** Comme `y_j = f(a_j)` :
+Pour un neurone qui se trouve tout à la fin du réseau (la sortie), on connaît directement la cible $d$.
 
-```
-δ_j = (∂R/∂y_j)(∂y_j/∂a_j) = (y_j − d_j) · f'(a_j)
-```
+En appliquant la règle de la chaîne entre l'erreur $R$, la sortie du neurone $y_j$ et son activation $a_j$, on obtient :
 
-**Étape 3 — delta d'une unité cachée (j ∉ Output).** L'activation `a_j` influence R uniquement à travers les unités h de l'aval :
+$δ_j = (∂R/∂y_j)(∂y_j/∂a_j) = (y_j − d_j) · f'(a_j)$
 
-```
-δ_j = ∂R/∂a_j = Σ_{h∈Aval(j)} (∂R/∂a_h)(∂a_h/∂a_j) = Σ_h δ_h · w_hj · f'(a_j)
+**Étape 3 — delta d'une unité cachée (j ∉ Output).**
+Pour un neurone situé au milieu du réseau (couche cachée), on ne connaît pas sa cible directe.
 
-δ_j = f'(a_j) · Σ_{h∈Aval(j)} w_hj · δ_h
-```
+L'activation `a_j` influence R uniquement à travers les unités h de l'aval :
+
+
+$δ_j = ∂R/∂a_j = Σ_{h∈Aval(j)} (∂R/∂a_h)(∂a_h/∂a_j) = Σ_h δ_h · w_hj · f'(a_j)$
+
+$δ_j = f'(a_j) · Σ_{h∈Aval(j)} w_hj · δ_h$
+
 
 (car `a_h = Σ w_hj f(a_j)+…`, donc `∂a_h/∂a_j = w_hj f'(a_j)`.)
 
+Interprétation : L'erreur d'un neurone caché est calculée en récupérant les erreurs ($\delta_h$) des neurones de la couche suivante, en les pondérant par les poids des connexions qui les relient ($w_{hj}$), puis en multipliant le tout par la dérivée $f'(a_j)$. C'est ainsi que l'erreur « remonte » du futur vers le passé.
+
 **Étape 4 — mise à jour :**
 
-```
-w_ji(t+1) = w_ji(t) − ε(t) · δ_j · s_i
-```
+Une fois que l'on connaît le delta ($\delta_j$) de chaque neurone grâce aux étapes précédentes, on met à jour le poids $w_{ji}$ en allant dans la direction opposée au gradient :
+
+$w_ji(t+1) = w_ji(t) − ε(t) · δ_j · s_i$
 
 ### Interprétation
 
@@ -485,7 +475,7 @@ w_ji(t+1) = w_ji(t) − ε(t) · δ_j · s_i
 - **Rétropropagation** : les deltas sont calculés de la **sortie vers l'entrée** ; l'erreur d'une unité cachée est la somme des erreurs des unités aval, **pondérée par les poids** qui les relient, puis multipliée par `f'(a_j)`. C'est ainsi que le crédit est réparti.
 - Si `f'(a_j) ≈ 0` (saturation), le delta est étouffé : c'est la source du **gradient évanescent**.
 
-### Algorithme d'apprentissage du MLP (diapo 27)
+### Algorithme d'apprentissage du MLP
 
 1. Initialiser aléatoirement les poids W₀.
 2. Choisir au hasard un couple (x(n), d(n)).
@@ -500,7 +490,7 @@ C'est une descente de gradient **stochastique** (un exemple tiré au hasard à l
 
 ---
 
-## 9. Exemple : le XOR (diapos 28–29)
+## Exemple : le XOR (diapos 28–29)
 
 Données (codage −1/+1) : (1,1)→−1 ; (1,−1)→+1 ; (−1,1)→+1 ; (−1,−1)→−1. Un perceptron simple ne peut pas séparer ces classes (non linéairement séparables).
 
