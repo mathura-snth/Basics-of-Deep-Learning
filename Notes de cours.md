@@ -642,30 +642,22 @@ La mise à jour **additive** de C\_t est la clé contre le gradient évanescent.
 - **TDNN** (Time Delay Neural Network) : même principe appliqué à l'axe **temps** pour la reconnaissance de phonèmes sur un spectrogramme (fréquence × temps) ; le nombre de positions est environ `(N − d)/s + 1` pour une fenêtre d, un pas s.
 
 ---
-MATHURA
+
 ## Réseaux convolutifs (CNN)
 
-### Architecture type (LeNet, diapo 62)
+### Architecture type (LeNet)
 
 Entrée (32×32) → **convolutions** (cartes de caractéristiques 6@28×28) → **sous-échantillonnage / pooling** (6@14×14) → convolutions (16@10×10) → pooling (16@5×5) → couches **entièrement connectées** (120, 84) → sortie (10 classes). Alternance détection de motifs / réduction de résolution.
 
-### La convolution discrète (diapos 71–72)
+### La convolution discrète
 
 Transformation **linéaire**, qui préserve l'ordre (la structure spatiale), **parcimonieuse** (quelques entrées seulement contribuent à chaque sortie) et qui **réutilise les paramètres** (mêmes poids en toutes positions).
 
-Calcul : on **fait glisser** le noyau sur la carte d'entrée ; à chaque position, on multiplie terme à terme noyau et zone recouverte, puis on **somme**.
-
-Exemple diapo 71 : image 5×5 (1ʳᵉ zone 3×3 : `1 1 1 / 0 1 1 / 0 0 1`), noyau 3×3 avec des 1 aux coins et au centre, 0 ailleurs (`1 0 1 / 0 1 0 / 1 0 1`) :
-
-```
-1·1 + 1·0 + 1·1 + 0·0 + 1·1 + 1·0 + 0·1 + 0·0 + 1·1 = 4
-```
-
-→ première case de la « convolved feature » = **4**. On décale ensuite le noyau et on recommence.
+Calcul : on **fait glisser** le noyau sur la carte d'entrée ; à chaque position, on multiplie terme à terme noyau et zone recouverte, puis on **somme**. On décale ensuite le noyau et on recommence.
 
 Définitions : **stride (pas)** = distance entre deux positions consécutives du noyau ; **zero padding** = nombre de zéros ajoutés au début et à la fin de chaque axe.
 
-### Formules de taille de sortie (diapos 79–84)
+### Formules de taille de sortie
 
 Notations : i = taille d'entrée, k = taille du noyau, s = stride, p = padding, o = taille de sortie (entrées/noyaux carrés).
 
@@ -678,13 +670,14 @@ Notations : i = taille d'entrée, k = taille du noyau, s = stride, p = padding, 
 | 5 | p=0, stride s | o = ⌊(i−k)/s⌋+1 |  |
 | 6 | **général** | **o = ⌊(i+2p−k)/s⌋ + 1** |  |
 
-À retenir : la relation 6 contient toutes les autres. Le plancher ⌊·⌋ implique qu'**plusieurs tailles d'entrée peuvent donner la même sortie** quand s>1 (certaines lignes/colonnes en bordure ne sont pas couvertes par le noyau).
+À retenir : la relation 6 contient toutes les autres. Le plancher ⌊·⌋ implique que **plusieurs tailles d'entrée peuvent donner la même sortie** quand s>1 (certaines lignes/colonnes en bordure ne sont pas couvertes par le noyau).
 
-### Pooling (diapos 73–78)
+### Pooling
 
 On fait glisser une fenêtre et on applique une fonction de **résumé** (comme une convolution, mais non linéaire / pas de noyau appris) :
 
-- **Max pooling** : le maximum de la fenêtre. **Average pooling** : la moyenne.
+- **Max pooling** : le maximum de la fenêtre.
+- **Average pooling** : la moyenne.
 - Fenêtre 2×2 courante : élimine **3/4 des activations**.
 - Rôle : réduire la résolution de la carte tout en gardant les caractéristiques utiles → **invariance aux petites translations** (et rotations légères), moins de calculs, moins de sur-apprentissage.
 
@@ -693,28 +686,32 @@ Exemple (diapo 77) : entrée 4×4 `[12 20 30 0 / 8 12 2 0 / 34 70 37 4 / 112 100
 - max pooling → `[20 30 / 112 37]` ;
 - average pooling → `[13 8 / 79 20]` (ex. (12+20+8+12)/4 = 13 ; (37+4+25+12)/4 = 19,5 ≈ 20).
 
-Variantes : **stochastique** (une activation tirée au hasard dans chaque région, effet de régularisation), **avec recouvrement** (fenêtres qui se chevauchent), **fractionnaire** (le taux de réduction peut être non entier, ce qui permet des réseaux plus profonds).
+Variantes :
+- **stochastique** (une activation tirée au hasard dans chaque région, effet de régularisation)
+- **avec recouvrement** (fenêtres qui se chevauchent)
+- **fractionnaire** (le taux de réduction peut être non entier, ce qui permet des réseaux plus profonds).
 
-### Convolution transposée (« déconvolution ») (diapos 85–88)
+### Convolution transposée (« déconvolution »)
 
-Opération qui va **dans le sens inverse** d'une convolution : elle part d'une carte ayant la forme de la sortie d'une convolution et reconstruit une carte ayant la forme de son entrée, avec un motif de connexions compatible. Utilisations : **couche de décodage d'un auto-encodeur convolutif**, projection de cartes vers un espace de plus grande dimension (super-résolution, segmentation).
+Opération qui va **dans le sens inverse** d'une convolution : elle part d'une carte ayant la forme de la sortie d'une convolution et reconstruit une carte ayant la forme de son entrée, avec un motif de connexions compatible.
 
-**Représentation matricielle** : en déroulant entrée et sortie en vecteurs, la convolution est une multiplication par une **matrice creuse C** dont les éléments non nuls sont les poids `w_{i,j}` du noyau. Pour une entrée 4×4 (vecteur de dimension 16) et un noyau 3×3 : C est de taille **4×16** et donne un vecteur de dimension 4 (sortie 2×2).
+Utilisations : On la retrouve dans le **décodage des auto-encodeurs convolutifs**, les tâches de segmentation d'images (pour retrouver la taille d'origine de l'image pixel par pixel) et la **super-résolution** (passer d'une image floue/basse résolution à une image haute résolution)
 
-- Passe avant : `y = C·x`.
-- Rétropropagation de l'erreur : multiplication par **Cᵀ** (16×4) : 4 dimensions → 16 dimensions.
-- La **transposée** = on échange passe avant et passe arrière ; le même noyau w définit C et Cᵀ.
+**Représentation matricielle** (comment relier la convolution classique et sa version transposée):
+- **En convolution normale** : Si on aplatit l'entrée en un vecteur de taille $16$ (image $4 \times 4$) et la sortie en un vecteur de taille $4$ (image $2 \times 2$), l'opération s'écrit $y = C \cdot x$, où $C$ est une matrice creuse de taille $4 \times 16$.
+- **En rétropropagation** : Pour faire remonter l'erreur dans l'autre sens lors de l'apprentissage d'une convolution normale, on multiplie par la matrice transposée $C^T$ (de taille $16 \times 4$), ce qui ramène l'information de $4$ à $16$ dimensions.
+- **La convolution transposée** reprend exactement cette matrice $C^T$ pour l'utiliser comme une opération directe : on passe d'une petite dimension à une grande dimension en utilisant les mêmes poids $w$.
 
 **Relation 8** : une convolution (s=1, p=0, noyau k) a pour transposée une convolution avec k'=k, s'=s, p'=k−1, et taille de sortie `o' = i' + (k−1)`. Elle équivaut à une convolution **full padding**. Exemple : convolution 4×4 → 2×2 ; sa transposée : 2×2 → 4×4.
 
 ### Exemples applicatifs du cours
 
-- **LeNet** (LeCun et al. 1989) : reconnaissance de chiffres manuscrits (codes postaux) par rétropropagation sur un réseau convolutif.
+- **LeNet** : reconnaissance de chiffres manuscrits (codes postaux) par rétropropagation sur un réseau convolutif.
 - **Identification du locuteur** (Bennani & Gallinari 1991) : un TDNN extrait des caractéristiques sur le spectrogramme ; un **HMM par locuteur** utilise ces caractéristiques.
 - **Segmentation médicale** : encodeur convolutif (Convolution + Batch Normalization + ReLU, pooling) puis décodeur (déconvolution, 1×1 convolution) → carte de segmentation de même taille que l'image.
-- **Réseau « ver nématode »** (diapo 70) : un réseau inspiré du système nerveux du ver pilote une voiture avec seulement 19 neurones de contrôle, après des couches convolutives de perception.
+- **Réseau « ver nématode »** : un réseau inspiré du système nerveux du ver pilote une voiture avec seulement 19 neurones de contrôle, après des couches convolutives de perception.
 
-### Super-résolution (SRCNN / FSRCNN) (diapos 63–67) : comptage des paramètres
+### Super-résolution (SRCNN / FSRCNN) : comptage des paramètres
 
 Objectif : passer d'une image basse résolution (LR) à haute résolution (HR).
 
@@ -730,21 +727,25 @@ Objectif : passer d'une image basse résolution (LR) à haute résolution (HR).
 
 ---
 
-## 15. Deep learning : objectifs et difficultés (diapos 93–94)
+## Deep learning : objectifs et difficultés
 
 **Objectif** : **construire un nouvel espace de représentation** par des architectures profondes (comme les couches cachées d'un MLP, mais en plusieurs niveaux d'abstraction). L'apprentissage non supervisé entre les couches peut décomposer le problème en sous-problèmes distribués, de plus en plus abstraits.
 
 **Difficultés de l'apprentissage supervisé de réseaux profonds :**
 
-- Les premières couches sont mal apprises : **diffusion du gradient** — l'erreur diminue en se propageant vers les couches précédentes, donc apprentissage très lent. Plus le réseau est profond, plus la non-linéarité est forte, ce qui augmente les risques d'obstacles à l'optimisation ; les couches basses restent avec des transformations peu utiles.
+- Les premières couches sont mal apprises :
+  - **diffusion du gradient** : l'erreur diminue en se propageant vers les couches précédentes
+  - donc apprentissage très lent
+  - plus le réseau est profond, plus la non-linéarité est forte, ce qui augmente les risques d'obstacles à l'optimisation
+  - les couches basses restent avec des transformations peu utiles
 - **Pas assez de données étiquetées** : on cherche des approches non supervisées, semi-supervisées ou par **transfert** pour exploiter les données non étiquetées.
 - Davantage de **minima locaux** que dans les réseaux peu profonds.
 
-**Réponses vues dans le cours** : ReLU (gradient mieux propagé), bonne initialisation et normalisation des données, cellules à portes (LSTM/GRU), poids partagés (CNN), pré-apprentissage non supervisé (auto-encodeurs).
+**Réponses** : ReLU (gradient mieux propagé), bonne initialisation et normalisation des données, cellules à portes (LSTM/GRU), poids partagés (CNN), pré-apprentissage non supervisé (auto-encodeurs).
 
 ---
 
-## 16. Checklist de révision
+## Checklist de révision
 
 - Expliquer le **problème d'affectation du crédit** et comment la GBP le résout.
 - Écrire de mémoire : la sortie d'un MLP à 1 couche cachée ; le risque empirique ; la règle de descente de gradient.
