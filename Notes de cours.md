@@ -760,3 +760,521 @@ Objectif : passer d'une image basse résolution (LR) à haute résolution (HR).
 - Lister les difficultés des réseaux profonds.
 
 ---
+
+
+
+# PARTIE III du cours : représentations non supervisées, modèles génératifs, optimisation et généralisation
+
+*Les premières diapos de la Partie III reprennent la convolution, le pooling et LeNet / TDNN déjà détaillés en Partie II (sections 13–14). Elles rappellent aussi l'objectif du deep learning et ses difficultés (Partie II, section 15) : c'est le point de départ de ce qui suit. **Les formules marquées « à vérifier » sont des formules standard que j'ai ajoutées parce que la diapo ne les montrait pas lisiblement.***
+
+## III.1 Apprentissage non supervisé de représentations : l'auto-encodeur (diapos 4–13)
+
+Rappel du problème : les premières couches d'un réseau profond sont mal apprises par rétropropagation (gradient qui se diffuse) et on manque de données étiquetées. Idée : **exploiter les données non étiquetées** pour apprendre de bonnes représentations, puis affiner.
+
+**Auto-encodeur** (aussi *autoassociateur* ou réseau *Diabolo*) : réseau de neurones **non supervisé** qui apprend à **reproduire son entrée en sortie** (fonction identité) en passant par une **couche intermédiaire plus petite**. But : apprendre un **codage efficace** (compression, représentation distribuée) pour la **réduction de dimension**. Il est lié au concept de **codage parcimonieux** (*sparse coding*).
+
+```
+Encodeur :   Y  = f_θ(X)              (code latent, de petite taille)
+Décodeur :   X̂ = g_θ'(Y)             (reconstruction de X)
+Perte (à vérifier) :  L(X, X̂) = || X − X̂ ||² = Σ_i ( x_i − x̂_i )²
+```
+
+La perte est la **différence entre l'entrée réelle et l'entrée reconstruite** (erreur quadratique si l'entrée est réelle). Variante vue sur la diapo : poids du décodeur **liés** à ceux de l'encodeur, **W** (encodeur) et **Wᵀ** (décodeur), ce qui divise le nombre de paramètres par 2.
+
+- **Comparaison avec l'ACP** : un auto-encodeur à sorties linéaires est équivalent à une ACP (Partie II, section 12). Avec des activations non linéaires, la **reconstruction est meilleure** que celle de l'ACP à dimension de code égale (diapo : images de chiens, ACP floue vs auto-encodeur net) et les **codes 2D** produits séparent mieux les classes (MNIST, base d'articles de presse).
+
+## III.2 Auto-encodeurs empilés (SAE, Stacked AutoEncoders) (diapos 14–20)
+
+On **empile** plusieurs auto-encodeurs pour former un réseau profond :
+
+1. On entraîne un premier auto-encodeur sur les données X (non étiquetées) → il produit un **nouveau code** Y¹ de X.
+2. On **jette le décodeur** et on utilise Y¹ comme **entrée** d'un second auto-encodeur, entraîné à reconstruire Y¹ → code Y². On répète : la couche cachée de l'auto-encodeur *i* devient l'entrée de l'auto-encodeur *i+1*.
+3. Apprentissage **couche par couche** (*layer-wise*), non supervisé : chaque couche minimise l'erreur de reconstruction de **sa** entrée.
+4. Une fois toutes les couches entraînées : deuxième phase appelée **fine-tuning** (réglage fin) : on empile les encodeurs, on ajoute une couche de classification et on entraîne **tout le réseau par rétropropagation supervisée**.
+
+Intérêt : le pré-entraînement initialise les poids dans une région favorable de l'espace des paramètres, ce qui réduit le problème du gradient diffusé et exploite les données non étiquetées.
+
+## III.3 Apprentissage auto-supervisé (diapos 21–26)
+
+**Idée** : obtenir des étiquettes **gratuitement** à partir des données elles-mêmes. On construit une tâche supervisée où l'on **prédit une partie de l'information à partir du reste** : entrées et labels sont tous deux fournis par les données. (Réf. : Lilian Weng, 2019.)
+
+- **Motivation** : produire un jeu de données propre et étiqueté coûte cher, alors que les données non étiquetées sont produites en continu.
+- **Tâche prétexte (*pretext task*)** : la tâche inventée qui fournit la perte supervisée. On ne s'intéresse **pas** à sa performance finale, mais à la **représentation intermédiaire** apprise, qui doit porter un sens sémantique/structurel et servir à des **tâches aval (*downstream*)**.
+- Évaluation classique : entraîner sur une tâche prétexte avec des images sans labels, puis brancher une couche intermédiaire sur une régression logistique multinomiale (ImageNet) : la précision mesure la qualité de la représentation.
+
+**Exemples de tâches prétextes :**
+
+| Famille | Principe |
+| --- | --- |
+| **Distorsion** (Exemplar-CNN, Dosovitskiy 2015) | Extraire N patchs 32×32 dans des zones à forts gradients (contours), appliquer des transformations aléatoires (translation, rotation, échelle) ; tous les patchs issus du même patch original forment **une même classe substitut** ; on apprend à les discriminer. |
+| **Rotation** (Gidaris 2018) | Tourner l'image d'un multiple de 90° (0°, 90°, 180°, 270°) ; classification à **4 classes** : prédire la rotation appliquée. |
+| **Patchs** (Doersch 2015) | Extraire deux patchs d'une image et prédire leur **position relative** : oblige à comprendre le contexte spatial des objets. |
+| **Génératif** | Reconstruire l'entrée tout en apprenant un latent utile : *context encoder* (Pathak 2016, reconstruire une zone masquée), *split-brain autoencoder* (Zhang 2017, prédire une partie des canaux couleur à partir des autres). |
+
+Les modèles génératifs sont tous auto-supervisés au sens large, mais l'**objectif** diffère : les génératifs visent des images diverses et réalistes ; la représentation auto-supervisée vise des **caractéristiques utiles à de nombreuses tâches**.
+
+**Auto-apprentissage (*self-training*)** : un classifieur existant **F\_pl** (le « pseudo-étiqueteur ») prédit des **pseudo-étiquettes** sur un grand jeu non étiqueté, puis on **réentraîne** un nouveau modèle avec ces pseudo-étiquettes.
+
+## III.4 Réseaux antagonistes génératifs (GAN) (diapos 27–47)
+
+### Pourquoi des modèles génératifs ?
+
+- **Modèle discriminatif** : étant donné une image X, prédit un label Y, i.e. estime **P(Y|X)**. Limites : il ne modélise pas **P(X)**, donc ne peut pas **générer** de nouvelles images.
+- **Modèle génératif** : apprend la probabilité conjointe **P(X,Y)** (ou P(X)) ; peut comprendre la structure sous-jacente des données **même sans labels**, et **échantillonner**.
+
+### Principe (Goodfellow et al., 2014)
+
+GAN = **G**enerative **A**dversarial **N**etworks : un système de **deux réseaux en compétition** dans un **jeu à somme nulle**.
+
+- **Générateur G** : reçoit un bruit gaussien z (distribution fixe) et produit un faux échantillon G(z). But : **tromper D**.
+- **Discriminateur D** : classifieur qui estime la probabilité **D(x)** que x soit un échantillon **réel**. But : distinguer vrai et faux.
+
+Au terme de l'apprentissage, G produit des échantillons que D ne sait plus distinguer des vrais (chambres à coucher réalistes, visages StyleGAN…).
+
+### Entraînement du discriminateur
+
+D est un classifieur binaire à sortie **sigmoïde**, entraîné par **entropie croisée binaire** sur N points réels x₁…x\_N et N points générés G(z₁)…G(z\_N) :
+
+```
+L_D = − Σ_{n=1}^{N} [ log D(x_n) + log( 1 − D(G(z_n)) ) ]
+Pour G fixé :  D* = argmin_D L_D
+```
+
+Le premier terme pousse D(x) vers 1 sur les vrais, le second pousse D(G(z)) vers 0 sur les faux. (Résultat classique, à vérifier : le discriminateur optimal vaut D\*(x) = p\_data(x) / (p\_data(x) + p\_G(x)).)
+
+### Entraînement du générateur
+
+La performance de G est évaluée **via D** : G **maximise la perte du discriminateur**.
+
+```
+Coût possible :  L_G = − L_D
+Pour D fixé :    G* = argmax_G L_D = argmax_G − Σ_n log( 1 − D(G(z_n)) )
+En pratique :    G* = argmax_G Σ_n log D(G(z_n))        (perte « non saturante »)
+```
+
+**Pourquoi remplacer la perte ?** Au début, G est faible et D(G(z)) ≪ 1. Le terme log(1−D(G(z))) est alors **presque plat** près de 0 (gradient faible), tandis que **log D(G(z)) a une forte pente près de zéro** : le gradient est grand, ce qui **relance l'apprentissage** du générateur.
+
+Formulation globale : **min\_G max\_D L(D, G)** (jeu minimax).
+
+### Code PyTorch du cours (GAN sur des « double moons » 2D)
+
+```python
+z_dim = 32; hidden_dim = 128
+net_G = nn.Sequential(nn.Linear(z_dim,hidden_dim), nn.ReLU(), nn.Linear(hidden_dim,2))
+net_D = nn.Sequential(nn.Linear(2,hidden_dim), nn.ReLU(), nn.Linear(hidden_dim,1), nn.Sigmoid())
+# boucle d'apprentissage (Adam, lr=1e-3, batch 50, 500 epochs)
+z = torch.empty(batch_size, z_dim).normal_()     # bruit gaussien
+fake_batch = net_G(z)
+loss = -torch.mean(torch.log(1 - net_D(fake_batch)) + torch.log(net_D(real_batch)))   # amélioration de D
+loss = -torch.mean(torch.log(net_D(net_G(z))))                                          # amélioration de G
+```
+
+À chaque mini-lot, on **alterne** : (1) une étape de gradient sur D avec L\_D ; (2) une étape sur G avec la perte non saturante. G produit des points en dimension 2 (les « lunes ») à partir d'un bruit en dimension 32.
+
+### GAN convolutifs (DCGAN, Radford 2015)
+
+Idées clés : remplacer les couches cachées complètement connectées par des **convolutions** ; **convolutions à pas fractionnaire (transposées)** dans le générateur ; **Batch Normalization** après chaque couche ; dans G : **ReLU** sur les couches cachées et **tanh** en sortie (images normalisées dans \[−1,1\]).
+
+### Problèmes des GAN
+
+- **Distribution implicite** : on ne peut pas calculer P(X) ; les GAN ne servent qu'à **échantillonner / générer**.
+- **Entraînement difficile** : non-convergence, **mode collapse** (G ne produit que quelques types d'échantillons) ; D cherche à maximiser sa récompense, G à la minimiser ; **la SGD n'a pas été conçue pour trouver l'équilibre d'un jeu**, donc on peut ne jamais converger.
+
+## III.5 Machines de Boltzmann restreintes (RBM) et DBN (diapos 48–64)
+
+**RBM** : version stochastique d'un réseau de Hopfield (réseau récurrent) ; utilisée comme mémoire associative et pour la réduction de dimension. **Modèle génératif non supervisé à énergie** avec une couche de **neurones visibles binaires v** et une couche de **neurones cachés binaires h**. « **Restreinte** » : **pas de connexions à l'intérieur d'une même couche** (graphe biparti). Cas particulier d'un **Deep Belief Network (DBN)**.
+
+### Énergie et probabilités
+
+```
+Énergie :  E(v,h) = − bᵀv − cᵀh − vᵀWh = − Σ_k b_k v_k − Σ_j c_j h_j − Σ_j Σ_k W_jk h_j v_k
+Jointe  :  p(v,h) = (1/Z) exp( −E(v,h) ),     Z = Σ_v Σ_h exp( −E(v,h) )
+Marginale: p(v) = Σ_h exp( −E(v,h) ) / Z
+```
+
+b = biais des unités visibles, c = biais des unités cachées, W = poids visible-caché. Faible énergie = configuration probable. Z est la **fonction de partition** (normalisation), très coûteuse à calculer.
+
+### Conditionnelles factorisées (la propriété clé)
+
+Dérivation de p(h|v) :
+
+```
+p(h|v) = p(v,h) / p(v) = (1/Z′) exp( cᵀh + vᵀWh )          (bᵀv ne dépend pas de h : absorbé dans la constante)
+       = (1/Z′) ∏_j exp( c_j h_j + vᵀW_{:,j} h_j )          (exponentielle d'une somme = produit)
+```
+
+Donc, **sachant v, les h\_j sont conditionnellement indépendants**, et pour h\_j ∈ {0,1} :
+
+```
+P(h_j = 1 | v) = exp(c_j + vᵀW_{:,j}) / ( exp(0) + exp(c_j + vᵀW_{:,j}) ) = sigmoïde( c_j + vᵀW_{:,j} )
+P(h | v) = ∏_j sigmoïde( c_j + vᵀW_{:,j} )        (peuvent servir de « caractéristiques »)
+P(v | h) = ∏_i sigmoïde( b_i + W_{i,:} h )
+```
+
+Conséquence pratique : on peut **échantillonner toute une couche en parallèle**, ce qui rend les RBM utilisables.
+
+### Apprentissage : exemple « apprendre des caractéristiques pour reconstruire des 2 » (diapos 59–61)
+
+Image 16×16 pixels, 50 neurones caractéristiques binaires. Principe (règle de type *divergence contrastive*, nom à vérifier dans tes notes) :
+
+- Avec la **donnée réelle** : **incrémenter** les poids entre un pixel actif et une caractéristique active.
+- Avec la **reconstruction** (à partir des caractéristiques activées) : **décrémenter** les poids entre un pixel actif et une caractéristique active.
+
+Résultat : 50 × 256 poids ; **chaque neurone apprend une caractéristique différente** ; la reconstruction est très proche des données (et même « meilleure que la réalité », plus propre). Sur des chiffres d'une **autre classe** (jamais vue), le réseau « essaie de voir chaque image comme un 2 » : il n'a appris que les caractéristiques des 2.
+
+### Deep Belief Network (Hinton 2002 ; Smolensky 1986)
+
+On **empile des RBM** : la couche cachée de l'un devient la couche visible du suivant. Première couche = RBM qui apprend des **contours** (*edges*) à partir des pixels ; couches supérieures (DBN) = **combinaisons de contours**, etc. : hiérarchie de représentations apprise **de façon non supervisée, couche par couche** (même logique que les SAE).
+
+## III.6 Variantes de la rétropropagation : accélérer la descente de gradient (diapos 65–77)
+
+Problème de la descente de gradient simple : le pas ε est difficile à régler (trop petit : lent ; trop grand : oscillations, surtout dans des « vallées » étroites). Les variantes ci-dessous adaptent la **direction** ou le **pas**. Notation : g(t) = ∂R̃/∂w(t) = gradient à l'instant t.
+
+### 1) Momentum (Rumelhart, Hinton, Williams 1986)
+
+Idée : donner une **inertie** aux poids pour **éviter les oscillations** ; momentum = descente de gradient + **lissage**.
+
+```
+Δw(t) = w(t+1) − w(t) = −ε · ∂R̃/∂w(t) + α · Δw(t−1),      0 ≤ α < 0,9
+```
+
+**Dérivation : l'ajustement est une moyenne pondérée de toutes les adaptations passées.** En développant Δw(t−1) = −ε g(t−1) + α Δw(t−2), etc. :
+
+```
+Δw(t) = −ε Σ_{k=0}^{∞} α^k · g(t−k)
+```
+
+**Effet d'accélération** : si le gradient est constant (g(t−k) = ∇) :
+
+```
+Δw(t) = −ε ∇ Σ_{k≥0} α^k = ( −ε / (1−α) ) ∇
+```
+
+Le **pas effectif** est ε̂ = ε/(1−α) : plus α est proche de 1, plus le pas est amplifié (ex. α = 0,9 → pas ×10) sur les directions de gradient stable. Dans les directions où le gradient **change de signe** (oscillations), les termes se compensent : les oscillations sont amorties.
+
+### 2) Méthode de Vogl (« Bold Driver », 1988) : pas adaptatif global
+
+```
+ε(t) = α ε(t−1)   si R̃(w(t)) < R̃(w(t−1))              (l'erreur baisse → on accélère)
+ε(t) = β ε(t−1)   si R̃(w(t)) > 1,05 · R̃(w(t−1))       (l'erreur monte de plus de 5 % → on freine)
+ε(t) = ε(t−1)     sinon,        avec α > 1 et β < 1   (ex. α = 1,05 ; β = 0,7)
+```
+
+### 3) Silva & Almeida (1990) : un pas **par connexion**
+
+```
+w_ij(t+1) = w_ij(t) − ε_ij(t) · ∂R̃/∂w_ij(t)
+ε_ij(t) = α ε_ij(t−1)  si  g_ij(t)·g_ij(t−1) > 0   (même signe : on accélère)
+ε_ij(t) = β ε_ij(t−1)  si  g_ij(t)·g_ij(t−1) < 0   (signe opposé : on freine)
+ε_ij(t) = ε_ij(t−1)    sinon          (ex. 1,1 < α < 1,3 ; β = 0,7)
+```
+
+### 4) Corrélation du gradient (Chan & Fallside, 1987)
+
+On mesure le **cosinus de l'angle entre deux gradients successifs** :
+
+```
+cos(θ) = g(t−1)ᵀ g(t) / ( ||g(t−1)|| · ||g(t)|| )
+ε(t) = ε(t−1) · β⁺ · cos(θ)   si cos(θ) > 0       (même direction : on accélère)
+ε(t) = ε(t−1) · β⁻             sinon             (changement de direction : on freine)
+β⁺ = 1,005 ;  β⁻ = 0,8
+```
+
+### 5) Quickprop (Fahlman, 1988)
+
+```
+Δw(t) = β · Δw(t−1),    β = g(t) / ( g(t−1) − g(t) )
+```
+
+Idée : approcher la **dérivée seconde** par la différence finie \[g(t) − g(t−1)\] / Δw(t−1) et sauter directement au minimum de la parabole locale. β > 0 ⇒ même direction ; β < 0 ⇒ on change de direction.
+
+### 6) Rprop (Riedmiller & Braun, 1993) : propagation résiliente
+
+Les adaptations ne dépendent **que du signe** du gradient, pas de sa valeur :
+
+```
+Δ_ij(t) = ε⁺ Δ_ij(t−1)  si g_ij(t)·g_ij(t−1) > 0     (0 < ε⁻ < 1 < ε⁺ ; ex. ε⁻ = 0,5 ; ε⁺ = 1,2)
+Δ_ij(t) = ε⁻ Δ_ij(t−1)  si g_ij(t)·g_ij(t−1) < 0
+Δ_ij(t) = Δ_ij(t−1)    sinon
+
+Δw_ij(t) = −Δ_ij(t) si g_ij > 0 ;   +Δ_ij(t) si g_ij < 0 ;   0 sinon          (initialisation Δ_ij(0) = 0,001)
+```
+
+Avantage : insensible à l'**amplitude** du gradient (qui peut être minuscule dans les couches profondes).
+
+## III.7 Règles du second ordre (diapos 78–86)
+
+### Méthode de Newton
+
+Développement de Taylor à l'ordre 2 de la fonction coût autour de ŵ :
+
+```
+R̃(w) ≈ R̃(ŵ) + (w−ŵ)ᵀ ∇R̃(ŵ) + ½ (w−ŵ)ᵀ H(ŵ) (w−ŵ)       avec le Hessien  H_ij = ∂²R̃ / ∂w_i ∂w_j
+```
+
+En dérivant : ∇R̃(w) = ∇R̃(ŵ) + H(ŵ)(w−ŵ). **Au minimum, ∇R̃(w) = 0**, donc ∇R̃(ŵ) + H(ŵ)(w−ŵ) = 0, d'où :
+
+```
+w(t+1) = w(t) − H⁻¹(w(t)) · ∇R̃(w(t))          (« direction de Newton »)
+```
+
+Convergence très rapide près d'un minimum (le Hessien tient compte de la **courbure**), mais méthode **impraticable** : calculer et inverser le Hessien (|w|×|w|) est **très coûteux** quand il y a des milliers de poids. D'où deux familles d'approximations :
+
+| Famille | Méthode | Coût (diapo 79) |
+| --- | --- | --- |
+| **Recherche directionnelle** (line search) | plus grande pente ; gradients conjugués | O(\|w\|) |
+| **Approximation du Hessien** | quasi-Newton | O(\|w\|²) |
+|  | pseudo-Newton ; Levenberg-Marquardt | O(\|w\|) |
+
+### Recherche directionnelle : méthode de plus grande pente
+
+On ne calcule pas de dérivée seconde, mais on cherche à chaque instant le **meilleur point dans une direction donnée** :
+
+```
+w(t+1) = w(t) + α d_t,      α choisi pour minimiser R̃(w(t) + α d_t)      (recherche linéaire)
+Plus grande pente :  d_t = −∇R̃(w(t))
+```
+
+### Gradients conjugués
+
+Le défaut de la plus grande pente : après une recherche linéaire exacte, deux directions successives sont **orthogonales** (zigzag). Les **directions conjuguées** évitent de défaire le travail précédent : d\_{t+1} est conjuguée à d\_t si la composante du gradient parallèle à d\_t, qui vient d'être annulée, **reste nulle** quand on se déplace le long de d\_{t+1}. Formellement : d\_tᵀ H d\_j = 0 pour i ≠ j.
+
+```
+d_{t+1} = − g_{t+1} + β_t d_t        (nouvelle direction = direction du gradient + compromis avec l'ancienne)
+```
+
+Algorithme : (1) choisir w(0) ; (2) g₀ = ∇R̃(w(0)), d₀ = −g₀ ; (3) à l'itération t, α\_t = argmin\_α R̃(w(t) + α d\_t) et w(t+1) = w(t) + α\_t d\_t ; (4) tester le critère d'arrêt ; (5) calculer le nouveau gradient g\_{t+1} ; (6) calculer β\_t ; (7) d\_{t+1} = −g\_{t+1} + β\_t d\_t ; (8) t ← t+1, retour en 3.
+
+Règles pour β\_t (g = gradient) :
+
+```
+Hestenes–Stiefel :  β_t = g_{t+1}ᵀ (g_{t+1} − g_t) / ( d_tᵀ (g_{t+1} − g_t) )
+Polak–Ribière   :  β_t = g_{t+1}ᵀ (g_{t+1} − g_t) / ( g_tᵀ g_t )
+Fletcher–Reeves  :  β_t = g_{t+1}ᵀ g_{t+1} / ( g_tᵀ g_t )
+```
+
+### Quasi-Newton (BFGS)
+
+On construit une approximation H′ ≈ H⁻¹ **sans calculer le Hessien** : w(t+1) = w(t) − ε H′(t) ∇R̃(w(t)), où ε est choisi par recherche linéaire, puis H′ est **mise à jour** à partir des seuls gradients. Règle **BFGS** (Broyden-Fletcher-Goldfarb-Shanno) :
+
+```
+p = w(t+1) − w(t)          v = ∇R̃(w(t+1)) − ∇R̃(w(t))          u = p/(pᵀv) − H′v/(vᵀH′v)
+H′(t+1) = H′ + p pᵀ/(pᵀv) − H′ v vᵀ H′/(vᵀ H′ v) + (vᵀ H′ v) u uᵀ
+```
+
+### Pseudo-Newton (Becker & Le Cun, 1988) et Levenberg-Marquardt
+
+On n'utilise qu'une **approximation diagonale** du Hessien :
+
+```
+Pseudo-Newton :  Δw_ij = − ∇R̃(w_ij) / ( |σ_ij| + μ ),    σ_ij = x_j² γ_i,   γ_i = ∂δ_i / ∂a_i     (μ évite la division par 0)
+Levenberg–Marquardt :  Δw_ij = − ∇R̃(w_ij) / σ_ij,   σ_ij = (1+λ) H_ii     (approximation du Hessien défini positif)
+```
+
+Ici le gradient ∇R̃(w\_ij) = δ\_i x\_j (voir rétropropagation) : chaque poids est mis à l'échelle par **sa propre courbure**.
+
+---
+
+## III.8 Apprentissage et généralisation (diapos 87–103)
+
+Plan : formalisme ; analyse comportementale (**dilemme biais-variance**) ; **dimension VC** ; ERM ; cohérence de l'ERM ; **SRM** ; heuristiques (régularisation formelle, bruit en entrée, arrêt précoce, régularisation structurelle).
+
+### Formalisme
+
+Données D\_N = {(x(n), d(n))}, tirées de p(x,d) = p(x) p(d|x). On cherche dans une famille F = {ψ(x,w), w ∈ Ω} la fonction minimisant le **risque théorique** (erreur de généralisation) :
+
+```
+R(w) = ∫ L[ d, ψ(x,w) ] dp(x,d),      ψ(x,w*) = argmin_{ψ} R(w)
+MSE :  R(w) = ∫ [ d − ψ(x,w) ]² dp(x,d)
+```
+
+### Analyse comportementale : décomposition de l'erreur
+
+On estime ψ(x,w) à partir de N réalisations D\_N du couple (X,D). Pour la MSE :
+
+```
+R(w) = E[ (D − ψ(X,w))² ]
+     = E[ (D − E[D|X])² ]  +  E[ (E[D|X] − ψ(X,w))² ]
+          (constante : erreur bayésienne,       (minimiser R(w) équivaut à minimiser ce terme)
+           liée au bruit du problème)
+```
+
+La **solution optimale** ψ(x,w\*) = **E\[D|X\]** : c'est la meilleure approximation au sens des moindres carrés de l'espérance conditionnelle.
+
+En faisant apparaître la dépendance de l'estimateur à l'échantillon (ψ\_{D\_N}), l'erreur se décompose en **trois termes** :
+
+```
+R = E[(D − E[D|X])²]                              → erreur bayésienne (incompressible)
+  + E_X[ ( E[D|X] − E_{D_N}[ψ_{D_N}(X,w)] )² ]      → (BIAIS)² : écart moyen entre l'estimateur et la solution optimale
+  + E[ ( ψ_{D_N}(X,w) − E_{D_N}[ψ_{D_N}(X,w)] )² ] → VARIANCE : sensibilité de l'estimateur à l'échantillon D_N
+```
+
+### Dilemme biais-variance (Geman, Bienenstock, Doursat 1992)
+
+Un bon estimateur = **bonne précision (faible biais) + bonne stabilité (faible variance)**. Quand la **complexité du modèle augmente**, le biais² **diminue** (le modèle peut représenter plus de choses) mais la variance **augmente** (il s'adapte aux particularités de l'échantillon). L'erreur globale a un **minimum** à une complexité intermédiaire : il faut un **compromis**.
+
+Exemple de la diapo 92 : points tirés d'une courbe en bosse (bleue) avec du bruit. Droite verte = **biais élevé** (sous-apprentissage, modèle trop simple) ; courbe rouge qui passe par tous les points = **variance élevée** (sur-apprentissage, modèle trop complexe).
+
+### Dimension de Vapnik-Chervonenkis (VC-dim)
+
+**Définition** : mesure de la **capacité** (complexité, pouvoir d'expression) d'un ensemble de fonctions pour la classification binaire. C'est le **cardinal du plus grand ensemble de points que l'algorithme peut « pulvériser » (*shatter*)** :
+
+```
+VC-dim = max { k : ∃ S, card(S) = k, F pulvérise S }
+```
+
+Pulvériser S = réaliser **toutes les étiquetages possibles** (2^k) des points de S.
+
+- **Une droite dans ℝ² a VC-dim = 3** : elle sépare toutes les étiquetages de 3 points non alignés (8 cas), mais **pas** 4 points (cas de type XOR). Plus généralement, un **hyperplan de ℝⁿ a VC-dim = n+1**.
+- Connue pour les modèles simples ; pour les modèles complexes (MLP) on n'a que des **bornes**.
+
+**MLP** (Baum & Haussler 1989) :
+
+- avec M unités à seuil et W poids : **VC-dim ≤ 2 W log₂(e M)**. Si l'erreur d'apprentissage vaut ε/2 et qu'on veut E\_test < ε, il faut **N ≥ O( (W/ε) log₂(M/ε) )** exemples ;
+- avec E entrées et C unités cachées : **VC-dim ≥ 2 ⌊C/2⌋ E**.
+
+À retenir : **le nombre d'exemples nécessaires croît avec le nombre de poids** (règle empirique : N ≈ W/ε).
+
+### Minimisation du risque empirique (ERM) et sa cohérence
+
+Le risque théorique n'est pas calculable (p(x,y) inconnue), donc on applique un **principe d'induction** :
+
+```
+R̃(w) = (1/N) Σ_n L[ d(n), ψ(x(n),w) ],        ψ(x,w⁺) = argmin R̃(w)
+```
+
+**Question** : le minimiseur empirique ψ(x,w⁺) est-il proche de l'optimum ψ(x,w\*) quand N → ∞ ? **Théorème (Vapnik & Chervonenkis, 1971)** : l'ERM est **cohérent** ssi R̃(w) converge **uniformément** vers R(w) sur F :
+
+```
+lim_{N→∞} P{ sup_{w∈Ω} | R(w) − R̃(w) | > ε } = 0,   ∀ ε > 0
+```
+
+**Intervalle de confiance** : avec probabilité 1 − δ, pour N observations, pour tout w :
+
+```
+R̃(w) − ε(N, VC-dim(w), δ)  ≤  R(w)  ≤  R̃(w) + ε(N, VC-dim(w), δ)
+```
+
+Pour un classifieur ψ ∈ {0,1} :
+
+```
+ε(N, VC, δ) = √( (VC/N) [ 1 + log( 2N / VC ) ] − (1/N) log( δ/4 ) )
+```
+
+Lecture : ε (largeur de l'intervalle) **croît avec la VC-dim** et **décroît avec N**. R̃(w) **diminue** avec la capacité du modèle, mais ε **augmente** : le risque garanti R̃ + ε passe par un minimum ; au-delà, c'est le **sur-apprentissage** (*over-fitting*).
+
+### Minimisation du risque structurel (SRM, Vapnik)
+
+L'ERM est efficace quand N est grand ou le problème simple. Principe du SRM : minimiser le **risque garanti**
+
+```
+R_garanti(w) = R̃(w) + ε(N, VC-dim(w), δ)
+```
+
+On définit une suite de classes de modèles **emboîtées** : S₁ ⊂ S₂ ⊂ … ⊂ S\_n, avec VC-dim(S₁) < VC-dim(S₂) < … < VC-dim(S\_n) (ex. réseaux avec de plus en plus d'unités cachées). **Deux étapes** :
+
+1. Dans chaque S\_i, calculer le minimum de l'erreur empirique : R̃(w\_i\*) = min\_{w∈Ω\_i} R̃(w).
+2. Choisir la classe S\* qui minimise le risque garanti : S\* = argmin\_{S\_i} \[ R̃(w\_i\*) + ε(N, VC-dim(S\_i), δ) \].
+
+### Heuristiques pour ajuster la capacité de généralisation
+
+Problème clé : **ajuster la capacité du système au problème et aux données** pour obtenir la **meilleure généralisation**. But : systèmes opérationnels, méthodes heuristiques. Méthode : **restreindre l'espace de recherche** de la solution ; **régulariser**.
+
+---
+
+## III.9 Régularisation (diapos 104–120)
+
+**Définition** : ensemble de techniques qui visent à **réduire l'erreur de généralisation sans trop dégrader l'erreur d'apprentissage**.
+
+**Causes du sur-apprentissage** : (1) modèle assez complexe pour **modéliser le bruit** des données d'apprentissage ; (2) jeu d'apprentissage **trop petit** pour représenter correctement la distribution sous-jacente. Un modèle trop simple fait du **sous-apprentissage** ; la complexité idéale ne se déduit pas des données → on **contraint** un modèle complexe.
+
+**Trois catégories** (efficacité entre parenthèses) :
+
+- **Modifier la fonction de perte** : L2 (forte), L1 (forte), régularisation par entropie (forte).
+- **Modifier l'échantillonnage** : augmentation de données (faible), validation croisée k-fold (moyenne).
+- **Modifier l'algorithme d'apprentissage** : dropout (forte), injection de bruit (faible).
+
+### Régularisation L2 (ridge, « weight decay »)
+
+Régression linéaire : f\_β(x) = β₀ + Σ\_i β\_i x\_i. On ajoute à la perte la **norme L2 des poids** :
+
+```
+min_β  Σ_p || y^p − f_β(x^p) ||² + λ || β ||₂²        λ ≥ 0
+```
+
+L'**hyperparamètre λ** règle le compromis sur/sous-apprentissage : λ grand → poids petits → modèle simple (sous-apprentissage) ; λ petit → sur-apprentissage possible. Interprétation géométrique (cas 2D) : la solution est le **point du contour d'erreur MSE (ellipses bleues) qui se trouve dans la boule L2 (un disque)** ; augmenter λ revient à **réduire le rayon de la boule**. Les poids deviennent très petits mais **jamais exactement nuls**.
+
+### Régularisation L1 (lasso)
+
+```
+min_β  Σ_p || y^p − f_β(x^p) ||² + λ || β ||₁        λ ≥ 0       (||β||₁ = Σ |β_i|)
+```
+
+La boule unité L1 est un **losange avec des coins** sur les axes : l'optimum tombe souvent sur un coin, donc **certains poids deviennent exactement nuls** → modèle **parcimonieux** (sélection de variables). C'est l'avantage de L1 sur L2.
+
+### Régularisation par entropie (classification)
+
+La sortie est une distribution de probabilité f\_θ(x) = p(classe = c | x), avec Σ\_c f\_c(x) = 1. L'**entropie** mesure l'incertitude de la distribution (plus d'incertitude = plus d'entropie). On modifie la perte :
+
+```
+min_θ  loss(y, f_θ(x)) − λ · ( − Σ_c f_c(x) log f_c(x) )        λ ≥ 0
+```
+
+On veut que la distribution de sortie garde **un certain degré d'incertitude** (donc **augmenter l'entropie**) ; comme on minimise, on **multiplie par −1**. Plus λ est grand, plus la distribution de sortie est **uniforme** (le modèle est moins « sûr de lui », donc moins sur-ajusté).
+
+### Augmentation de données (faible)
+
+Agrandir artificiellement le jeu d'apprentissage par des transformations de l'entrée : recadrage aléatoire, rotation, dilatation, retournement, ajout d'un peu de bruit, changements de couleur… (exemple du papillon).
+
+### Validation croisée k-fold (moyenne)
+
+On découpe le jeu en **k sous-ensembles disjoints** ; on entraîne **k modèles** : pour chacun, un sous-ensemble sert à la validation et les k−1 autres à l'apprentissage. On moyenne les k scores : estimation plus fiable de l'erreur de généralisation (et aide à choisir les hyperparamètres comme λ).
+
+### Dropout (forte)
+
+Pour les réseaux de neurones : à chaque itération, des **connexions (ou unités) sont supprimées au hasard** selon un **taux de dropout** (% de connexions retirées), et le réseau restant est entraîné ; à l'itération suivante, d'autres sont retirées. Cela empêche les unités de se **co-adapter** et donne une meilleure généralisation. Le taux doit être choisi avec soin ; **valeur conseillée : entre 0,25 et 0,4**. (Exemple de la diapo : taux de 30 % → 11 connexions actives sur 16.)
+
+### Injection de bruit (faible)
+
+- **Bruit sur les poids** : à chaque mise à jour, ajouter un petit bruit aléatoire aux poids → caractéristiques plus robustes. Peu efficace comme régularisateur.
+- **Bruit sur les entrées** (Bishop 1995 ; Matsuoka) : pendant l'apprentissage, on ajoute un bruit aléatoire ξ à chaque entrée, **la sortie désirée restant inchangée** : une petite zone de l'espace d'entrée autour de chaque exemple est associée à la même sortie → **lissage** de la fonction apprise autour des points d'apprentissage.
+
+**Résultat important : apprendre avec du bruit en entrée équivaut à une régularisation de Tikhonov.** Dérivation :
+
+```
+R_ξ(w) = ½ Σ ∫∫∫ [ d − ψ(x+ξ, w) ]² p(d|x) dp(x,d) p(ξ) dξ
+
+Développement de Taylor (ordre 2) :
+ψ(x+ξ,w) = ψ(x,w) + Σ_i ξ_i ∂ψ/∂x_i + ½ Σ_i Σ_j ξ_i ξ_j ∂²ψ/∂x_i∂x_j + O(ξ³)
+
+Hypothèses sur le bruit :  E(ξ) = 0  et  E(ξξᵀ) = λ I   (bruit centré, indépendant d'une composante à l'autre, de variance λ)
+```
+
+En remplaçant dans R\_ξ et en prenant l'espérance sur ξ, les termes d'ordre 1 s'annulent (E(ξ)=0), et E(ξ\_iξ\_j) = λ δ\_ij ne laisse que les termes diagonaux :
+
+```
+R_ξ(w) = R(w) + λ Ω
+Ω = ½ Σ ∫∫ { ( ∂ψ/∂x_i )² + ½ (d − ψ) ∂²ψ/∂x_i² } p(d|x) dp(x,d)      (somme sur les exemples et sur les composantes i)
+```
+
+Le terme Ω pénalise les **grandes dérivées de ψ par rapport aux entrées** : on force la fonction à être **lisse** (peu sensible aux petites variations de x). C'est une régularisation, avec λ = variance du bruit.
+
+### Arrêt précoce (*early stopping*)
+
+**Arrêter l'apprentissage avant la convergence** : on suit l'erreur sur un jeu de **validation** à côté de l'erreur d'apprentissage. L'erreur d'apprentissage baisse toujours ; l'erreur de validation baisse puis **remonte** (sur-apprentissage). On **s'arrête au minimum de l'erreur de validation** (Bishop 1995). Effet proche d'une régularisation : en partant de poids petits, un arrêt précoce limite la croissance des poids, donc la complexité effective du modèle.
+
+---
+
+## III.10 Checklist de révision (Partie III)
+
+- Expliquer l'**auto-encodeur**, sa perte de reconstruction, sa différence avec l'ACP ; décrire le **SAE** (pré-entraînement couche par couche + fine-tuning).
+- Définir l'apprentissage **auto-supervisé**, la **tâche prétexte**, donner 3 exemples (rotation, patchs, Exemplar-CNN) ; expliquer le **self-training** (pseudo-labels).
+- **GAN** : rôle de G et D ; écrire L\_D et la perte non saturante de G ; expliquer **pourquoi** on remplace log(1−D(G(z))) par log D(G(z)) ; citer les problèmes (mode collapse, non-convergence) ; DCGAN.
+- **RBM** : énergie, p(v,h), Z ; **démontrer** que P(h\_j=1|v) = sigmoïde(c\_j + vᵀW\_{:,j}) ; différence avec un auto-encodeur ; DBN = RBM empilés.
+- **Momentum** : formule, développement en série, pas effectif ε/(1−α).
+- Citer et écrire : Bold Driver, Silva-Almeida, Quickprop, Rprop (règles de signe).
+- **Newton** : dériver w(t+1) = w(t) − H⁻¹∇R ; pourquoi c'est coûteux ; gradients conjugués (β\_t de Fletcher-Reeves/Polak-Ribière) ; quasi-Newton BFGS ; pseudo-Newton / Levenberg-Marquardt (Hessien diagonal).
+- **Biais-variance** : démontrer la décomposition en erreur bayésienne + biais² + variance ; interpréter la courbe en U.
+- **VC-dim** : définition (pulvériser), droite dans ℝ² = 3, hyperplan = n+1, bornes pour le MLP.
+- **ERM**, cohérence (convergence uniforme), intervalle de confiance ε(N,VC,δ), **SRM** (2 étapes, classes emboîtées).
+- Régularisation : L2 vs L1 (géométrie : disque vs losange ; L1 → parcimonie), entropie, augmentation de données, k-fold, **dropout** (0,25–0,4), bruit en entrée ≡ Tikhonov (dérivation), **arrêt précoce**.
