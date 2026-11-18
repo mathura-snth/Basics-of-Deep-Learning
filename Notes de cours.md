@@ -1278,3 +1278,623 @@ Le terme Ω pénalise les **grandes dérivées de ψ par rapport aux entrées** 
 - **VC-dim** : définition (pulvériser), droite dans ℝ² = 3, hyperplan = n+1, bornes pour le MLP.
 - **ERM**, cohérence (convergence uniforme), intervalle de confiance ε(N,VC,δ), **SRM** (2 étapes, classes emboîtées).
 - Régularisation : L2 vs L1 (géométrie : disque vs losange ; L1 → parcimonie), entropie, augmentation de données, k-fold, **dropout** (0,25–0,4), bruit en entrée ≡ Tikhonov (dérivation), **arrêt précoce**.
+
+
+---
+
+# PARTIE IV du cours : prototypes et apprentissage non supervisé
+
+*Objectifs du cours : (1) opposer apprentissage par poids et par dictionnaire, construire et entraîner un réseau RBF ; (2) classer avec des prototypes étiquetés (LVQ1, LVQ2.1, GLVQ, apprentissage de pertinence) ; (3) expliquer l'apprentissage non supervisé et relier Hebb, Oja et Sanger à l'ACP ; (4) exécuter k-means et la carte de Kohonen (SOM) à la main ; (5) comparer SOM, Neural Gas, GNG et ART, expliquer auto-encodeurs et auto-supervisé ; (6) choisir une méthode et l'évaluer sans étiquettes. **Les formules marquées « à vérifier » sont des compléments standard que je n'ai pas lus sur les diapos.***
+
+## IV.1 Deux façons d'apprendre : poids ou dictionnaire (diapos 4–5)
+
+|  | Modèles à **poids** (MLP, CNN, Transformers) | Modèles à **dictionnaire** (k-NN, RBF, LVQ, et k-means, SOM en partie B) |
+| --- | --- | --- |
+| Stocke | des millions de poids répartis sur des couches | un dictionnaire de **référents** : prototypes, centres, vecteurs de codage |
+| Décide par | enchaînement de sommes pondérées et de non-linéarités | **similarité** de l'entrée aux référents |
+| Apprend par | descente de gradient globale (rétropropagation) | placement des référents, souvent **local** |
+| Lecture | difficile : connaissance **distribuée** | facile : chaque référent est un exemple typique |
+
+Un spectre : **k-NN** (dictionnaire = tous les exemples) → **LVQ, RBF** (dictionnaire compact) → **MLP, CNN** (aucun dictionnaire, que des poids). Trois questions pour tout modèle à dictionnaire :
+
+|  | k-NN | RBF | LVQ |
+| --- | --- | --- | --- |
+| Que contient le dictionnaire ? | tous les exemples | M centres (sans étiquette) | quelques prototypes étiquetés |
+| Comment compare-t-on ? | une distance | une gaussienne de la distance | une distance (apprise dans ω-LVQ, GRLVQ) |
+| Comment décide-t-on ? | vote des k plus proches | somme pondérée de similarités | classe du prototype le plus proche |
+| Comment apprend-on ? | rien : on stocke | k-means puis moindres carrés | attirer / repousser les prototypes |
+
+Mêmes idées, plusieurs noms : prototype = référent = centre = vecteur de codage (*codebook vector*) = *codeword* = vecteur de référence. Partie A : dictionnaires construits **avec** étiquettes ; Partie B : **sans** étiquettes.
+
+---
+
+## IV.2 Réseaux RBF : un dictionnaire de centres (diapos 6–22)
+
+**Idée** : approcher toute fonction en **additionnant des « bosses » locales** (comme construire un paysage avec des tas de sable). Chaque unité cachée est un **détecteur local** : elle répond fortement près de son centre μ\_j et presque pas ailleurs.
+
+```
+Unité cachée :  φ_j(x) = exp( − ||x − μ_j||² / (2σ_j²) )        (gaussienne ; μ_j = centre/prototype, σ_j = largeur)
+Sortie       :  y_k(x) = w_k0 + Σ_{j=1}^{M} w_kj · φ_j(x)           (combinaison linéaire des bosses)
+```
+
+Centres = **où** sont les bosses ; largeurs = **jusqu'où** elles portent ; poids = **hauteur** des bosses. Version à covariance : φ\_j(x) = exp( −½ (x−μ\_j)ᵀ Σ\_j⁻¹ (x−μ\_j) ).
+
+### Interpolation exacte (Powell, 1987)
+
+On place **une fonction non linéaire par point d'apprentissage** :
+
+```
+ψ(x,w) = Σ_{n=1}^{N} w(n) · φ( ||x − x(n)|| )     ⟹   Φ w = d     avec  Φ_{nn'} = φ( ||x(n) − x(n')|| )     ⟹   w = Φ⁻¹ d
+```
+
+Le modèle passe **exactement** par les N points (donc interpole aussi le bruit : sur-apprentissage). Fonctions radiales possibles : **gaussienne** exp(−x²/2σ²) ; **multiquadratique inverse** (x²+σ²)^(−α) ; **spline plaque mince** x² ln x ; **polyharmonique** x³ ou x.
+
+### Du « exact » au « lissé » : le réseau RBF (Broomhead & Lowe 1988 ; Moody & Darken 1989)
+
+RBF = **amélioration de l'interpolation exacte, un lissage** : le nombre M de fonctions est **≪ N** et leurs paramètres (prototype, variance) sont **estimés par apprentissage**.
+
+**Architecture à 2 couches** : entrées → unités RBF (transformation **non linéaire** : calcul de la distance entrée–prototype) → sorties **linéaires** (combinaison linéaire).
+
+### Entraînement en 3 étapes (diapo 11)
+
+1. **Placer les centres** (non supervisé) : k-means sur les entrées (ou sous-ensemble aléatoire d'exemples), M ≪ N.
+2. **Choisir les largeurs** (heuristique) : σ = d\_max / √(2M) pour toutes les unités (d\_max = distance maximale entre centres), ou σ\_j = distance aux centres les plus proches.
+3. **Ajuster les poids de sortie** (supervisé, **linéaire**) : moindres carrés **en une seule fois**, sans pas d'apprentissage : **Wᵀ = Φ⁺ D**.
+
+(4ᵉ étape facultative : affiner centres, largeurs et poids ensemble par descente de gradient.) **Pourquoi c'est rapide** : la partie difficile et non linéaire n'a pas besoin d'étiquettes ; la partie supervisée est un problème linéaire.
+
+**Dérivation de l'étape 3.** Erreur : R̃ = ½ Σ\_n Σ\_k ( y\_k(x(n)) − d\_k(n) )² = ½ || Φ Wᵀ − D ||², avec (Φ)*{nj} = φ\_j(x(n)) et (D)*{nk} = d\_k(n). Annuler le gradient par rapport à Wᵀ donne les **équations normales** :
+
+```
+Φᵀ Φ Wᵀ = Φᵀ D     ⟹     Wᵀ = Φ⁺ D,     Φ⁺ = ( ΦᵀΦ )⁻¹ Φᵀ      (pseudo-inverse)
+```
+
+**Dérivation de l'étape 4 (gradient sur la 1ʳᵉ couche).** Comme ∂φ\_j/∂σ\_j = φ\_j · ||x−μ\_j||²/σ\_j³ et ∂φ\_j/∂μ\_ji = φ\_j · (x\_i − μ\_ji)/σ\_j² :
+
+```
+∂R̃/∂σ_j  = Σ_n Σ_k ( y_k − d_k ) w_kj · exp(−||x−μ_j||²/2σ_j²) · ||x−μ_j||² / σ_j³
+∂R̃/∂μ_ji = Σ_n Σ_k ( y_k − d_k ) w_kj · exp(−||x−μ_j||²/2σ_j²) · ( x_i − μ_ji ) / σ_j²
+```
+
+### Rôle de la largeur σ (diapo 12)
+
+- **σ trop petit** (0,01) : pics isolés, la sortie retombe à 0 entre les centres → **sur-apprentissage** (MSE train 0,080 ; test 0,179).
+- **σ bien choisi** (0,20) : les bosses voisines se **recouvrent un peu** → courbe lisse (train 0,015 ; test 0,027).
+- **σ trop grand** (1,00) : chaque bosse couvre tout → **sous-apprentissage** (train 0,201 ; test 0,197).
+
+C'est exactement le dilemme biais-variance (Partie III) appliqué à un hyperparamètre.
+
+### Exercice XOR avec deux unités gaussiennes (diapo 15)
+
+Centres (1,1) et (0,0) ; φ₁ = exp(−||x−(1,1)||²), φ₂ = exp(−||x−(0,0)||²).
+
+| (x₁,x₂) | classe | φ₁ | φ₂ |
+| --- | --- | --- | --- |
+| (0,0) | 0 | e⁻² = 0,135 | e⁰ = 1,000 |
+| (0,1) | 1 | e⁻¹ = 0,368 | e⁻¹ = 0,368 |
+| (1,0) | 1 | 0,368 | 0,368 |
+| (1,1) | 0 | 1,000 | 0,135 |
+
+1. **Vérification** : pour (0,0), distance à (1,1) = √2 donc φ₁ = e^(−2) = 0,135 ; distance à (0,0) = 0 donc φ₂ = 1.
+2. **(0,1) et (1,0) tombent au même point** car ils sont **à la même distance (1) des deux centres** (symétrie), donc φ₁ = φ₂ = e⁻¹.
+3. **Poids** (ma solution, la diapo renvoie aux notes) : y = −φ₁ − φ₂ + 0,94 (w₁ = w₂ = −1, b ≈ 0,94). Classe 0 : φ₁+φ₂ = 1,135 → y = −0,20 < 0 ; classe 1 : 0,736 → y = +0,20 > 0. La droite de séparation est φ₁ + φ₂ = 0,935.
+
+**Théorème de Cover** : une transformation non linéaire vers un nouvel espace rend (souvent) les classes **linéairement séparables**. Le XOR, impossible pour un perceptron, devient trivial dans l'espace (φ₁,φ₂).
+
+### RBF pour la classification : lecture probabiliste (diapos 17–19)
+
+Avec M fonctions radiales (composantes j), probabilité conditionnelle d'une classe : p(x|C\_k) = Σ\_j p(x|j) P(j|C\_k). Densité non conditionnelle : p(x) = Σ\_k p(x|C\_k)P(C\_k) = Σ\_j p(x|j)P(j), avec P(j) = Σ\_k P(j|C\_k)P(C\_k). Par Bayes :
+
+```
+P(C_k|x) = Σ_j [ P(j|C_k) p(x|j) P(C_k) / Σ_j' p(x|j')P(j') ] · P(j)/P(j) = Σ_j w_kj · φ_j(x)
+
+1ʳᵉ couche :  φ_j(x) = p(x|j)P(j) / Σ_j' p(x|j')P(j') = P(j|x)         (« responsabilité » de la composante j)
+2ᵉ couche :  w_kj  = P(j|C_k)P(C_k) / P(j) = P(C_k|j)
+```
+
+Interprétation : P(C\_k|x) = Σ\_j P(C\_k|j)·P(j|x) (loi des probabilités totales). Les unités cachées calculent **à quelle composante appartient x**, les poids de sortie donnent **la classe de chaque composante**.
+
+**Théorème de Cotter (1990)** (Stone-Weierstrass) : sur un compact S de ℝⁿ, toute fonction continue t(x) peut être approchée à ε près par ψ(x,w) = Σ\_k w\_k φ(||x − c^k||) avec K centres : **comme le MLP, le RBF est un approximateur universel**.
+
+### RBF vs MLP
+
+|  | MLP | RBF |
+| --- | --- | --- |
+| Architecture | multicouche, connexions complexes | 2 couches, connexions spécialisées |
+| Unités cachées | **codent** l'information (somme pondérée, hyperplans) | calculent des **distances** à des prototypes (bosses) |
+| Représentation | **distribuée** | **localisée** |
+| Apprentissage | global (rétropropagation) | en 2 phases (non supervisé + supervisé), plus rapide, moins d'exemples |
+
+Frontières : un MLP trace des hyperplans ; un RBF entoure les classes par des régions localisées (ellipses). **Aujourd'hui** : noyau RBF des **SVM**, **processus gaussiens**, interpolation de données éparses (terrain, météo), modèles locaux rapides (contrôle, séries temporelles). **Limite** : en grande dimension, il faut beaucoup de bosses pour couvrir l'espace (**fléau de la dimension**).
+
+---
+
+## IV.3 LVQ : un dictionnaire de prototypes étiquetés (diapos 23–46)
+
+**LVQ** (*Learning Vector Quantization*, Kohonen 1988) : adaptation de **k-means / quantification vectorielle** au cas **supervisé**.
+
+- **Apprentissage** : déterminer un ensemble de **vecteurs de référence (prototypes)**, chacun associé à une classe ; l'espace est partitionné en régions (cellules de Voronoï).
+- **Reconnaissance** : on affecte la **classe du prototype le plus proche** (règle du plus proche voisin, pour une distance donnée).
+- **Vue réseau** : 2 couches complètement connectées : entrée (exemples) → sortie (classes), les prototypes de la classe C\_i étant regroupés.
+
+**Résultat marquant (diapo 26)** : données de type XOR (chaque classe = 2 blobs), précision sur 1000 points de test : **1 prototype par classe = 50 %** (les moyennes de classe tombent au milieu : hasard) ; **2 prototypes par classe (LVQ1) = 98,7 %** (4 vecteurs stockés) ; **1-plus-proche-voisin avec les 400 points = 97,8 %**. → 4 prototypes bien placés classent aussi bien que stocker les 400 exemples.
+
+**Frontières** : la frontière entre 2 classes est un sous-ensemble de la **tessellation de Voronoï** des prototypes (le dual est le réseau de **Delaunay**).
+
+### LVQ1 (Kohonen)
+
+Soit w(i) le prototype **le plus proche** de x (de classe C\_i), x ∈ C\_j.
+
+```
+Coût :  R_LVQ1(x,w) = + ||x − w(i)||²    si C_i = C_j     (bon prototype : on veut réduire la distance)
+                      − ||x − w(i)||²    si C_i ≠ C_j     (mauvais prototype : on veut augmenter la distance)
+
+Règles (gradient, car ∂||x−w||²/∂w = −2(x−w)) :
+w(i)(t+1) = w(i)(t) + ε(t) ( x − w(i)(t) )    si C_i = C_j   → ATTIRER vers x
+w(i)(t+1) = w(i)(t) − ε(t) ( x − w(i)(t) )    si C_i ≠ C_j   → REPOUSSER de x
+w(k)(t+1) = w(k)(t)                              pour les autres prototypes (inchangés)
+```
+
+**Exemple chiffré (diapo 28)** : w\_A = (0,0) classe A, w\_B = (2,2) classe B, α = 0,5 ; x = (1,5 ; 1) de classe A.
+
+1. Distances : ||x−w\_A|| = √(2,25+1) = 1,80 ; ||x−w\_B|| = √(0,25+1) = 1,12 → le plus proche est w\_B.
+2. Classe de w\_B = B ≠ A → **mauvais** → repousser.
+3. w\_B ← (2,2) − 0,5·(−0,5 ; −1) = **(2,25 ; 2,5)**.
+
+*À toi de jouer (ma correction)* : on représente x de nouveau : ||x−w\_B|| = √(0,75²+1,5²) = 1,68 < 1,80, donc **w\_B est encore le plus proche** (mal classé : il faudra le repousser encore). Puis x′ = (0,5 ; 0,2) de classe A : ||x′−w\_A|| = 0,54 et ||x′−w\_B|| = 2,89 → w\_A le plus proche, bonne classe → **attirer** : w\_A ← (0,0) + 0,5·(0,5 ; 0,2) = **(0,25 ; 0,10)**.
+
+### LVQ2 / LVQ2.1
+
+On utilise les **deux** prototypes les plus proches : w(i) le **1ᵉʳ plus proche** (classe C\_i ≠ C\_k, donc **mauvaise** classe) et w(j) le **2ᵉ plus proche** (classe C\_j = C\_k, **bonne** classe), pour x ∈ C\_k.
+
+```
+Coût :  R_LVQ2(x,w) = ||x − w(j)||² − ||x − w(i)||²     si C_i ≠ C_k  et  x ∈ F_win ;   0 sinon
+Fenêtre :  x ∈ F_win  ⟺  min( d(x,w(j))/d(x,w(i)) , d(x,w(i))/d(x,w(j)) ) > (1 − win)/(1 + win),    win ≈ 0,25
+Règles :  w(i)(t+1) = w(i)(t) − ε(t)( x − w(i)(t) )      (on repousse le mauvais)
+          w(j)(t+1) = w(j)(t) + ε(t)( x − w(j)(t) )      (on attire le bon)
+```
+
+Idée : on ne corrige que si x est **proche de la frontière** entre les deux prototypes (dans la fenêtre : les deux distances sont comparables), ce qui **déplace la frontière vers sa position optimale** (diapo 35). **LVQ3** : comme LVQ2.1, plus une petite mise à jour des deux prototypes s'ils sont de la même classe que x (pas ε·α), pour qu'ils restent sur les données. Défaut de LVQ2.1 : si on entraîne trop longtemps, les prototypes **dérivent**.
+
+### GLVQ (Sato & Yamada, 1996) : LVQ avec fonction de coût
+
+Pour chaque exemple x : d⁺ = distance au plus proche prototype de la **bonne** classe ; d⁻ = distance au plus proche prototype d'une **mauvaise** classe.
+
+```
+μ(x) = ( d⁺ − d⁻ ) / ( d⁺ + d⁻ )  ∈ [−1, 1]      μ < 0 ⟺ bien classé
+E = Σ_x Φ( μ(x) ),     Φ = sigmoïde
+```
+
+Descente de gradient sur E : w⁺ **attiré** vers x, w⁻ **repoussé**. Avantages : **stable** (pas de dérive, contrairement à LVQ2.1 trop longtemps), maximise une **marge** (esprit SVM), prototypes restent lisibles. Les dérivées de μ (à vérifier) : ∂μ/∂d⁺ = 2d⁻/(d⁺+d⁻)² et ∂μ/∂d⁻ = −2d⁺/(d⁺+d⁻)² ; les poids de mise à jour de w⁺ et w⁻ sont donc proportionnels à d⁻ et d⁺ respectivement, multipliés par Φ'(μ) (grand pour les exemples proches de la frontière).
+
+### ω-LVQ (Bennani, 1999) : apprendre les prototypes ET l'importance des variables
+
+But simultané : (1) **pondérer les variables** selon leur pouvoir discriminant ; (2) classer comme LVQ2. On introduit une couche de poids π\_k (diagonale Π) : z = Πx.
+
+```
+Coût :  R_ω-LVQ2(x,w,Π) = ||Πx − w(j)||² − ||Πx − w(i)||²     si C_i ≠ C_k ;   0 sinon
+Règles :  w(i)(t+1) = w(i)(t) − ε(t)( Πx − w(i)(t) )
+          w(j)(t+1) = w(j)(t) + ε(t)( Πx − w(j)(t) )
+          π_k(t+1) = π_k(t) + δ(t) x_k ( w_k(i)(t) − w_k(j)(t) )          (règle écrite sur la diapo)
+Initialisation : Π(0) = I (poids π_ij = 1 si i = j, 0 sinon)
+```
+
+*Attention, à vérifier avec ton cours* : en dérivant le coût, ∂R/∂π\_k = 2x\_k ( w\_k(i) − w\_k(j) ), donc une descente de gradient donne π\_k ← π\_k **−** 2δ x\_k ( w\_k(i) − w\_k(j) ) = π\_k + 2δ x\_k ( w\_k(j) − w\_k(i) ). Intuition : la variable k est **renforcée** quand le bon prototype w(j) est plus proche de x que le mauvais w(i) sur cette variable. Le signe de la diapo semble dépendre de la convention des indices.
+
+**Résultat (identification du locuteur, 3 mots de code par locuteur, Bennani, Fogelman, Gallinari 1990)** : LVQ2 de Kohonen = **96,6 %** (IC 95 % \[95,1 ; 98,1\]) ; ω-LVQ2 = **99,6 %** (IC 95 % \[99,2 ; 100\]).
+
+### La famille LVQ
+
+| Variante | Ce qui est mis à jour | Idée clé |
+| --- | --- | --- |
+| **LVQ1** | prototype le plus proche | attirer si bonne classe, repousser sinon |
+| **LVQ2.1** | gagnant et second, de classes différentes | seulement dans une **fenêtre** autour de la frontière (win ≈ 0,2–0,3) |
+| **LVQ3** | comme LVQ2.1 + les deux si même classe que x | petit pas supplémentaire ε·α : les prototypes restent sur les données |
+| **GLVQ** | plus proche bon et plus proche mauvais | gradient d'un coût : stable, marge |
+| **ω-LVQ** (Bennani) | prototypes + poids des variables | apprend l'importance de chaque variable |
+| **GRLVQ / GMLVQ** (2002, 2009) | prototypes + pertinences / matrice de pertinence | apprend la **métrique** : pertinence interprétable |
+
+En pratique : commencer par LVQ1 ou GLVQ ; ajouter l'apprentissage de pertinence pour savoir **quelles variables comptent**. **Pourquoi LVQ est encore utilisé (IA interprétable)** : prototypes lisibles (cas typiques inspectables par un expert), pertinence des variables, médecine/biologie (le médecin doit comprendre le modèle), parole et signaux. Outil : `sklearn-lvq` (GLVQ, GRLVQ, GMLVQ avec interface scikit-learn).
+
+### Bilan de la Partie A
+
+|  | MLP (poids) | RBF | LVQ |
+| --- | --- | --- | --- |
+| Connaissance stockée | poids | dictionnaire de centres | dictionnaire de prototypes étiquetés |
+| Unités cachées calculent | sommes pondérées (hyperplans) | distances aux centres (bosses) | distances aux prototypes |
+| Entraînement | rétropropagation globale | k-means puis moindres carrés | attirer / repousser |
+| Interprétabilité | faible | moyenne | **élevée** |
+
+Fil conducteur : **un petit dictionnaire de référents bien placés, et des décisions par similarité**. La suite (partie B) construit le dictionnaire **sans aucune étiquette**.
+
+---
+
+## IV.4 Le principe de l'apprentissage non supervisé (diapos 47–52)
+
+- **Supervisé** : chaque x vient avec une étiquette y ; but : apprendre f : x ↦ y (un professeur corrige chaque réponse). **Non supervisé** : on n'a que x ; but : **découvrir la structure de p(x)** (groupes, directions principales, cartes). Pourquoi : les étiquettes coûtent cher, les données brutes abondent.
+- **Principe** : système entrée-sortie **sans professeur**, qui découvre spontanément dans les données des **caractéristiques, régularités, corrélations, catégories**. Les unités et connexions doivent être un **effet d'organisation (auto-organisation)**.
+- **Condition (Barlow 1989)** : l'apprentissage non supervisé est efficace s'il y a de la **redondance** dans les données ; sinon les données ≃ bruit. **La redondance produit de la connaissance.**
+- **Ce que peuvent représenter les sorties** : une **similarité** (entre une forme nouvelle et des formes passées), des **composantes principales** (axes de projection), un **clustering** (groupes homogènes), des **prototypes** (représentant de chaque groupe), un **codage** (réduction de dimension, quantification vectorielle), une **projection** qui préserve la topologie.
+
+**Deux grandes familles :**
+
+|  | **Apprentissage hebbien** | **Apprentissage compétitif** |
+| --- | --- | --- |
+| Outil | règle de Hebb | distance |
+| Sorties actives | **plusieurs** (valeurs continues : similarités ou projections) | **une seule** (ou une par groupe) : *Winner-Take-All*, le gagnant emporte tout |
+| Méthodes | Hebb (1949), Oja (1982) → ACP en ligne, Sanger | quantification vectorielle, k-means ; SOM (+ voisinage sur grille) ; Neural Gas (+ voisinage par rang) ; GNG (+ nouvelles unités) ; ART (+ test de vigilance) |
+
+Troisième branche : **non supervisé profond** (auto-encodeurs, modèles génératifs, auto-supervisé).
+
+---
+
+## IV.5 Apprentissage hebbien et ACP (diapos 53–58)
+
+### Règle de Hebb (1949)
+
+Unité linéaire : y = Σ\_i w\_i x\_i. Avec une seule sortie :
+
+```
+Δw_i = α · y · x_i          (α = pas d'apprentissage)
+```
+
+« Les neurones qui s'activent ensemble se connectent » : les données fréquentes influencent davantage l'apprentissage. **Problème : croissance incontrôlée des poids.** Raison : Δ(||w||²) ≈ 2αy² ≥ 0 à chaque pas, donc la norme ne peut que croître ; plus précisément, la composante de w sur le vecteur propre principal de la matrice de corrélation est multipliée par (1 + αλ) à chaque pas : croissance **exponentielle**. Simulation du cours : ||w|| ≈ **4 × 10⁶** après 1000 pas avec Hebb.
+
+### Règle d'Oja (1982) : Hebb + contrainte de norme
+
+On impose ||w|| = 1 (Σ w\_i² = 1) :
+
+```
+Δw_i = α · y · ( x_i − y · w_i )          (x_i = entrée ; y w_i = « sortie rétropropagée » qui retranche)
+```
+
+**À l'équilibre** (⟨Δw\_i⟩ = 0), avec R = ⟨xxᵀ⟩ la **matrice de corrélation** et y = wᵀx :
+
+```
+0 = ⟨y x_i − y² w_i⟩ = Σ_j R_ij w_j − ( wᵀ R w ) w_i      ⟺      R w = ( wᵀ R w ) w = λ w
+```
+
+donc **w est un vecteur propre de R**, de valeur propre λ = wᵀRw, et ||w|| = 1. La règle choisit la direction qui **maximise ⟨y²⟩ = wᵀRw** : le **1ᵉʳ axe principal**. Simulation : ||w|| se stabilise à **1,00**, angle de **0,6°** avec la 1ʳᵉ composante principale. → **Règle d'Oja = ACP en ligne avec un seul neurone linéaire.**
+
+### Règle de Sanger (GHA, 1989) : plusieurs composantes
+
+m neurones linéaires, y\_i = w\_i · x :
+
+```
+Δw_ij = α · y_i · ( x_j − Σ_{k ≤ i} y_k w_kj )
+```
+
+Le neurone 1 suit la règle d'Oja → PC1 ; le neurone 2 voit l'entrée **moins ce que le neurone 1 explique déjà** → PC2 ; etc. (**déflation**). Les lignes de W convergent vers les m premiers vecteurs propres, dans l'ordre. Le réseau calcule l'ACP **exemple par exemple**, sans jamais former la matrice de covariance.
+
+### Mémoire hebbienne : le réseau de Hopfield (1982)
+
+N neurones binaires s\_i = ±1, complètement connectés. **Stockage** de P motifs ξᵖ par la règle de Hebb :
+
+```
+W = (1/N) Σ_p ξᵖ ξᵖᵀ,     w_ii = 0
+Rappel : répéter  s_i ← signe( Σ_j w_ij s_j )  jusqu'à stabilité
+```
+
+Une **énergie** (à vérifier : E = −½ sᵀWs) **décroît** à chaque pas : l'état tombe dans l'**attracteur** le plus proche (un motif stocké). **Capacité ≈ 0,14 N** motifs. C'est une **mémoire adressable par le contenu** : un indice partiel ou bruité (25 % de pixels inversés) retrouve la mémoire complète (3 lettres H, T, O dans 100 neurones). Hopfield (prix Nobel de physique 2024 avec Hinton) ; les réseaux de Hopfield modernes sont proches de l'**attention** (Partie V).
+
+---
+
+## IV.6 Apprentissage compétitif et k-means (diapos 59–70)
+
+### Notations
+
+- M **unités** A = {c₁,…,c\_M}, chacune avec un **prototype** (vecteur de référence) w\_k ∈ ℝ^D.
+- Un ensemble C ⊂ A×A de **connexions de voisinage**, **symétriques** et sans valeur : (i,j) ∈ C ⇔ (j,i) ∈ C ; **N\_k = { i ∈ A | (k,i) ∈ C }** = voisins de k.
+- Données générées selon p(x), jeu fini D\_N = {x(1),…,x(N)}.
+- **Unité gagnante** : s(x) = argmin\_{c∈A} ||x − w\_c||.
+- **Région de Voronoï** de i : V\_i = { x ∈ ℝ^D | i = argmin\_j ||x − w\_j|| } (tessellation de Voronoï ou de Dirichlet) ; cas fini : R\_c = { x ∈ D\_N | s(x) = c }. Son dual est la **triangulation de Delaunay**.
+- **Principe** : avant l'apprentissage les prototypes sont n'importe où ; après, chaque prototype est au centre d'un groupe (*cluster*) d'exemples.
+
+### Critères
+
+```
+Erreur de quantification (distorsion) :  E(p,A) = Σ_c ∫_{V_c} ||x − w_c||² p(x) dx      cas fini : E(D,A) = Σ_c Σ_{x∈R_c} ||x − w_c||²
+Maximisation de l'entropie :            H(X) = − Σ P(x) log P(x)        (toutes les unités servent à peu près autant)
+Projection topologique :                 les voisins sur la carte représentent des données voisines
+```
+
+### Cas simple : seul le gagnant s'adapte
+
+```
+sortie y_{i*} = 1, y_i = 0 pour i ≠ i* :   Δw_{i*j} = α ( x_j − w_{i*j} )     ⇔   Δw_ij = α y_i ( x_j − y_i w_ij )  (règle d'Oja)
+```
+
+### Apprentissage compétitif = k-means en ligne
+
+Pour chaque exemple x : (1) trouver le gagnant s = argmin\_i ||x − w\_i|| ; (2) le rapprocher : **w\_s ← w\_s + ε ( x − w\_s )** ; (3) les autres prototypes ne bougent pas.
+
+**Pourquoi « k-means » ?** Avec ε = 1/n\_s (n\_s = nombre d'exemples déjà gagnés par s), w\_s est exactement la **moyenne** de ses exemples. Dérivation : w^(n) = w^(n−1) + (1/n)( x\_n − w^(n−1) ) ⟺ w^(n) = ((n−1)/n) w^(n−1) + x\_n/n, qui est la moyenne courante. **Version par lots** : algorithme de **Lloyd / LBG** : affecter tous les points à leur centre le plus proche, puis recalculer chaque moyenne, et répéter.
+
+### Exercice : k-means à la main (diapo 68)
+
+Données 1-D : x = 1, 2, 6, 8, 9 ; K = 2 ; centres initiaux c₁ = 1, c₂ = 2.
+
+- **Itération 1** : 1 → c₁ (distances 0 / 1) ; 2 → c₂ (1 / 0) ; 6 → c₂ (5 / 4) ; 8, 9 → c₂. Groupes {1} et {2,6,8,9}. Nouveaux centres : c₁ = 1 ; c₂ = 25/4 = **6,25**.
+- **Itération 2** : 1 → c₁ ; 2 → c₁ (distances 1 / 4,25) ; 6, 8, 9 → c₂. Groupes {1,2} et {6,8,9}. Centres : c₁ = **1,5** ; c₂ = 23/3 ≈ **7,67**.
+- **Itération 3** : aucune affectation ne change → **convergence** (2 mises à jour de centres, la 3ᵉ passe confirme la stabilité).
+- **Inertie finale** Σ(x−c)² = (0,5² + 0,5²) + (1,67² + 0,33² + 1,33²) = 0,5 + 4,67 ≈ **5,17**.
+- **Pourquoi le 1ᵉʳ découpage est mauvais** : les deux centres initiaux sont **collés** à gauche, donc un centre ne capte qu'un point et l'autre « avale » presque tout. **Meilleure initialisation** : k-means++ (centres initiaux éloignés les uns des autres), ou prendre des exemples tirés au hasard et relancer plusieurs fois (plusieurs graines).
+
+### Application : compression d'image (diapo 69)
+
+Chaque pixel est un point de l'espace RGB (3-D) ; k-means trouve K couleurs prototypes (la **palette**, ou *codebook*) ; chaque pixel est stocké comme l'**indice** de son prototype. Original : 24 bits/pixel ; **K = 16** : log₂(16) = 4 bits/pixel, **6 fois plus petit** ; **K = 4** : 2 bits/pixel, **12 fois plus petit** (mais les collines vertes disparaissent : trop peu de prototypes). Même principe : palettes GIF, *codebooks* de codecs de parole, compression de poids de réseaux.
+
+### Limites du « winner-take-all »
+
+1. **Unités mortes** : un prototype initialisé loin des données ne gagne jamais, donc n'apprend jamais.
+2. **Initialisation** : le résultat dépend des positions de départ (minima locaux).
+3. **Pas de topologie** : des unités voisines ne représentent pas forcément des données voisines (rien à visualiser).
+4. **K fixe** : le nombre de prototypes doit être choisi à l'avance.
+
+Remèdes : faire apprendre aussi les voisins (**SOM** voisinage sur grille ; **Neural Gas** voisinage par rang → corrige 1, 2, 3) ; faire **grandir** le réseau (**GNG**, **ART** → corrige 4).
+
+---
+
+## IV.7 Cartes auto-organisatrices de Kohonen (SOM) (diapos 71–91)
+
+**SOM** (*Self-Organizing Map*, Kohonen 1982, d'après Willshaw & von der Malsburg 1976) : **projeter des données de grande dimension sur un espace discret, régulier, de dimension plus petite** (1-D ou 2-D). Les unités occupent les nœuds d'un **réseau régulier** (grille), avec une notion de **voisinage** entre unités. **Propriété** : **des données semblables ont des projections proches sur la carte.**
+
+### Voisinage et décroissance
+
+Distance sur la grille entre les unités r = c\_{km} et s = c\_{ij} (distance de Manhattan) : **d₁(r,s) = |i−k| + |j−m|**. Grille **hexagonale** ou **rectangulaire**. Fonction de voisinage (gaussienne) :
+
+```
+h_rs(t) = ( 1/λ(t) ) · exp( − d₁²(r,s) / λ²(t) ),         λ(t) = λ_i ( λ_f / λ_i )^{ t / t_max }
+```
+
+Le rayon λ(t) **diminue** (décroissance exponentielle de λ\_i à λ\_f) : au début, grand voisinage = ordre global ; à la fin, voisinage étroit = ajustement fin.
+
+### Fonction de coût
+
+```
+BMU(x(n)) = argmin_s ||w_s − x(n)||²                     (Best Matching Unit = unité gagnante)
+R̃(w) = (1/N) Σ_n Σ_j h_{j,BMU(x(n))} ||w_j − x(n)||²            ∇_{w_j} R̃(n) = h_{j,BMU(x(n))} ( w_j − x(n) )
+```
+
+C'est la distorsion de k-means **pondérée par le voisinage**.
+
+### Algorithme d'apprentissage (diapo 80)
+
+1. **Initialisation** : A = grille M₁×M₂, prototypes w\_c ∈ ℝⁿ aléatoires, voisinage C (hexagonal/rectangulaire), t = 0.
+2. **Présenter** un exemple x.
+3. **Gagnant** : s = argmin\_{c∈A} ||x − w\_c||² (phase compétitive).
+4. **Adapter** (phase d'adaptation) : **w\_r(t+1) = w\_r(t) + ε(t) · h\_rs(t) · ( x − w\_r(t) )** pour tout r, avec ε(t) = ε\_i ( ε\_f / ε\_i )^{ t/t\_max }.
+5. t ← t + 1.
+6. **Test d'arrêt** : si t < t\_max, retourner en 2.
+
+Paramètres du cours : λ\_i = 2, λ\_f = 0,5 ; ε\_i = 0,5, ε\_f = 0,005 ; t\_max = 10 000.
+
+### Exemple chiffré : une mise à jour de SOM (diapo 81)
+
+Carte 1-D de 3 unités w₁ = (0,0), w₂ = (1,0), w₃ = (2,0) ; x = (1,8 ; 1) ; ε = 0,5 ; voisinage h = 1 (gagnant), 0,5 (voisin direct), 0 (autres).
+
+| Unité | distance de x à w | h | Mise à jour ε·h·(x−w) | Nouveau prototype |
+| --- | --- | --- | --- | --- |
+| w₁ | 2,06 | 0 | — | (0, 0) |
+| w₂ | 1,28 | 0,5 | 0,25 × (0,8 ; 1) = (0,2 ; 0,25) | **(1,2 ; 0,25)** |
+| w₃ (gagnant) | 1,02 | 1 | 0,5 × (−0,2 ; 1) = (−0,1 ; 0,5) | **(1,9 ; 0,5)** |
+
+k-means ne déplacerait que w₃. La SOM entraîne aussi w₂, voisin du gagnant : c'est ce qui **garde la carte ordonnée**. **Réponse au quiz Q2** : si le voisinage se réduit au seul gagnant (h = 1 pour le gagnant, 0 sinon), on retrouve **k-means en ligne**.
+
+### Taille de la carte (heuristique, diapo 82)
+
+On estime le nombre total de neurones **M ≈ 5 · N^0,54321** (N = nombre d'exemples), puis on fait une **ACP** et on récupère les deux plus grandes valeurs propres V₁ et V₂ ; on pose R = √(V₁/V₂) et on cherche n₁, n₂ tels que **n₁ · n₂ = M** et **n₁/n₂ = R**. En résolvant : **n₁ = √(M·R)** et **n₂ = √(M/R)** (à arrondir). La grille est donc d'autant plus allongée que les données le sont.
+
+### Phase d'auto-organisation
+
+Le réseau part d'un nuage désordonné (grille tordue au hasard) puis **se déplie** progressivement jusqu'à épouser la forme des données (diapos 83–88 : grille qui se déplie, anneau, image, IRIS).
+
+### Utiliser une SOM en pratique (diapo 90)
+
+- **Normaliser** les variables d'abord ; **initialiser** sur le plan des deux premières composantes principales ; entraîner en **deux phases** : *ordonnancement* (voisinage large, ε grand) puis *convergence* (voisinage étroit, ε petit) ; préférer la grille **hexagonale**, dimensionnée par l'heuristique ACP.
+- **Qualité** :
+  - **Erreur de quantification** QE = (1/N) Σ\_n ||x\_n − w\_{s(x\_n)}|| : **fidélité** (les prototypes représentent-ils bien les données ?).
+  - **Erreur topographique** TE = part des x\_n dont les **1ᵉʳ et 2ᵉ meilleures unités ne sont pas voisines** sur la grille : **organisation** (la carte est-elle dépliée ?).
+  - Les deux erreurs évoluent souvent **en sens opposé** : chercher un compromis.
+- **Lecture** : **U-matrix** (distances entre prototypes voisins : les crêtes séparent les groupes), **plans de composantes** (une carte par variable). Outils : MiniSom (Python), `kohonen` (R), SOM Toolbox (MATLAB).
+- **Usages** : analyse exploratoire (carte de la pauvreté mondiale, 39 indicateurs, Kaski & Kohonen 1996), cartes de documents (WEBSOM), surveillance de procédés (une dérive = une trajectoire sur la carte), segmentation (clients, risque de crédit, expression de gènes : une cellule = un profil type). Fil commun : une **carte 2-D lisible** par un expert.
+
+---
+
+## IV.8 Neural Gas (NG) et Growing Neural Gas (GNG) (diapos 92–108)
+
+Question : et si on **supprime la grille** et qu'on laisse le réseau découvrir **sa propre topologie** ?
+
+### Neural Gas (Martinetz & Schulten, 1991)
+
+Les prototypes sont adaptés **indépendamment de tout arrangement topologique prédéfini**. L'information d'arrangement est donnée implicitement par les **distorsions** associées à chaque x : D\_x = { ||x − w\_i|| , i = 1..M }. L'adaptation dépend de l'**ordre (rang)** des éléments de D\_x :
+
+```
+Δw_i = α · f_i(D_x) · ( x − w_i ),      f_i(D_x) ∈ [0,1]      →  règle « Winner-Take-Most » (le gagnant prend le plus) au lieu de « Winner-Take-All »
+```
+
+Pour chaque unité i, on note **k\_i** son **rang** : le nombre d'unités j **plus proches de x** que i (||x − w\_j|| < ||x − w\_i||). Le gagnant a k = 0.
+
+```
+f(k_i) = exp( − k_i / λ ),      f(0) = 1,   f(k) → 0 quand k → ∞      (λ = nombre d'unités qui adaptent significativement leur prototype)
+w_i(t+1) = w_i(t) + ε(t) · exp( − k_i / λ ) · ( x − w_i(t) )
+```
+
+Le voisinage est donc défini par **le rang dans l'ordre des distances**, et non par la position sur une grille. Toutes les unités apprennent (donc pas d'unité morte).
+
+**Règle hebbienne compétitive** : pour **mémoriser la topologie**, on crée une **connexion** entre l'unité gagnante i₀ et la **2ᵉ plus proche** i₁ : C\_{i₀i₁} = 1, avec un **âge** t\_{i₀i₁} qui doit rester < T (durée de vie).
+
+**Algorithme** : (0) w\_i aléatoires, C = ∅ ; (1) présenter x ; (2) classer les unités par distance croissante (i₀, i₁, …, i\_{M−1}) ; (3) adapter tous les poids avec exp(−k\_i/λ) ; (4) si C\_{i₀i₁} = 0, créer la connexion (C ← 1, âge ← 0), sinon remettre son âge à 0 ; (5) **incrémenter l'âge** de toutes les connexions issues de i₀ ; (6) **supprimer** les connexions d'âge > T ; retour en (1).
+
+Résultat : un **graphe** qui épouse la forme des données (anneau, formes en L ou en Y…), y compris les **trous**.
+
+### Growing Neural Gas (Fritzke, 1994/1995)
+
+**Version incrémentale** : le réseau **crée à la fois des unités et des connexions topologiques** ; il **grandit** au lieu d'avoir un M fixé. Pour créer des unités : on mémorise l'**erreur locale** accumulée par chaque unité, et on crée une nouvelle unité près de celle qui a accumulé la **plus grande erreur**.
+
+1. **Initialisation** : A = {c₁, c₂}, C = ∅.
+2. **Présenter** x.
+3. Déterminer le **1ᵉʳ gagnant** s₀ = argmin\_c ||x−w\_c|| et le **2ᵉ** s₁ = argmin\_{c≠s₀} ||x−w\_c||.
+4. Si la connexion (s₀,s₁) n'existe pas, la **créer** (âge 0).
+5. **Accumuler l'erreur** du gagnant : ΔE\_{s₀} = ||x − w\_{s₀}||².
+6. **Adapter** : w\_{s₀} ← w\_{s₀} + ε\_b (x − w\_{s₀}) pour le gagnant, et w\_i ← w\_i + ε\_n (x − w\_i) pour tout voisin i ∈ N\_{s₀} (ε\_b > ε\_n).
+7. **Vieillir** les connexions issues de s₀ : t\_{s₀ i} ← t\_{s₀ i} + 1.
+8. **Supprimer** les connexions d'âge > T, puis les unités **sans connexion**.
+9. **Créer une nouvelle unité** (en pratique, périodiquement, tous les λ pas) :
+   - q = unité d'**erreur accumulée maximale** ; g = parmi les voisins de q, celle d'erreur maximale ;
+   - nouvelle unité r : **w\_r = (w\_q + w\_g)/2** ;
+   - connecter r à q et g, **supprimer** la connexion (q,g) ;
+   - réduire l'erreur de q et g d'une fraction δ : ΔE\_q = −δE\_q, ΔE\_g = −δE\_g ;
+   - erreur de r : E\_r = (E\_q + E\_g)/2.
+
+**Réponse au quiz Q4** : GNG ajoute une unité **au milieu de la zone qui a accumulé le plus d'erreur** (entre l'unité la plus fautive q et son voisin le plus fautif g). Usages : apprentissage de topologie (trous, branches, nombre de composantes connexes), reconstruction 3-D de surfaces (nuage de points → maillage), cartes pour la robotique, flux de données (variantes avec oubli). **Force : le graphe de prototypes est lui-même le résultat**, un squelette compact des données. Démo interactive : demogng.de.
+
+---
+
+## IV.9 Adaptive Resonance Theory (ART) (diapos 109–117)
+
+**Dilemme stabilité–plasticité** : **plasticité** = apprendre de nouvelles choses à partir de nouvelles données ; **stabilité** = garder ce qui est déjà appris. Les deux sont en tension. Toujours ouvert aujourd'hui : un réseau profond entraîné sur une nouvelle tâche peut **oublier la précédente** (*catastrophic forgetting*, sujet de l'apprentissage continu).
+
+**ART (Grossberg, 1987)** : système qui acquiert en continu de nouvelles connaissances **sans oublier** les anciennes ; composé de modules obéissant à des équations différentielles souvent non linéaires ; **le nombre de catégories est dynamique**. **Réponse d'ART** : on ne met à jour un prototype que si la nouvelle entrée lui **ressemble assez** (**test de vigilance**) ; sinon on **crée un nouveau prototype**.
+
+### ART1 (entrées binaires)
+
+1. Présenter x. 2. **Gagnant** s = argmax\_j Σ\_i w\_ij x\_i.
+2. **Test de vigilance** : la sortie passe le test ssi  Σ\_i t\_is x\_i / Σ\_i x\_i > δ  (δ = seuil de vigilance, t = poids de rétroaction binaires).
+   - Si le gagnant échoue : le **masquer** et retourner en 2 ; répéter jusqu'à ce qu'un gagnant passe le test.
+   - Si **aucune** sortie ne passe : **créer une nouvelle unité** et retourner en 2.
+3. Si un gagnant passe : adapter  w\_is(t+1) = t\_is(t) x\_i / ( 0,5 + Σ\_i t\_is(t) x\_i )  et  t\_is(t+1) = t\_is(t) x\_i.
+
+La mise à jour de t\_is = t\_is·x\_i fait l'**intersection** (ET logique) entre le prototype et l'entrée : le prototype ne garde que les traits communs.
+
+### ART2 (entrées continues)
+
+1. Présenter x. 2. Gagnant s = argmin\_j ||x − w\_j||. 3. **Test** : passe ssi ||x − w\_s|| < δ (**δ = rayon du cluster**).
+2. Si le gagnant échoue : **nouvelle unité** k avec w\_k = x.
+3. Sinon : w\_s(t+1) = ( x + w\_s(t) · |cluster\_s(t)| ) / ( |cluster\_s(t)| + 1 ), c'est-à-dire la **moyenne courante** du cluster (|A| = cardinal de A).
+
+**Réponse au quiz Q5** : le paramètre de **vigilance** contrôle la **taille / le nombre des catégories** : vigilance élevée (rayon δ petit en ART2) → beaucoup de petites catégories ; vigilance faible → peu de grandes catégories.
+
+---
+
+## IV.10 Auto-encodeurs (rappel Partie III, ici côté non supervisé) (diapos 118–122)
+
+Un auto-encodeur apprend un bon **code** en essayant de **copier son entrée** : x → encodeur → code z → décodeur → x̂, avec **L = ||x − x̂||²**.
+
+- **Auto-encodeur linéaire = ACP** (même sous-espace, Baldi & Hornik 1989 ; ce que trouve la règle d'Oja). **Auto-encodeur non linéaire profond** : découvre des structures courbes (**variétés**) que l'ACP ne voit pas. Variantes : débruiteur, parcimonieux, variationnel.
+- **Le piège** : un code **assez large** permet de **recopier** l'entrée : reconstruction parfaite, mais on n'apprend rien. D'où une **contrainte** qui force le code à garder l'essentiel :
+  - **sous-complet** : code plus petit que l'entrée (goulot d'étranglement, il faut compresser) ;
+  - **débruitant** (Vincent et al. 2008) : on **corrompt** l'entrée (x̃) et on demande la version **propre** x : le réseau doit apprendre la structure ;
+  - **parcimonieux** : pénalité ||z||₁ : seulement quelques unités du code s'activent pour chaque entrée. **Réponse au quiz Q6** : un code très large n'impose aucune compression, donc l'identité est une solution triviale : le réseau recopie sans extraire de structure.
+
+### Auto-encodeur variationnel (VAE, Kingma & Welling 2014)
+
+x → encodeur → (μ, σ) → **z = μ + σ·ε** avec ε \~ N(0, I) (**astuce de reparamétrisation** : le tirage aléatoire est isolé dans ε, ce qui laisse passer le gradient) → décodeur → x̂.
+
+```
+Perte = || x − x̂ ||²   +   KL( q(z|x) || N(0, I) )
+         (reconstruction)   (régularisation : garder les codes proches d'une gaussienne standard)
+Pour q = N(μ, diag σ²) (à vérifier) :  KL = −½ Σ_i ( 1 + log σ_i² − μ_i² − σ_i² )
+```
+
+**Génération** : tirer z \~ N(0, I) et le passer dans le décodeur : nouvel échantillon réaliste ; des codes voisins donnent des sorties voisines (**espace latent lisse**). Base de nombreux modèles génératifs, dont l'espace latent de Stable Diffusion.
+
+### Application : détection d'anomalies par reconstruction (diapo 122)
+
+**Recette** : entraîner **uniquement sur des données normales** ; tout ce que le modèle reconstruit mal est suspect. Seuil = **99ᵉ percentile** des erreurs d'entraînement (1,82 dans l'exemple). Simulation (données 10-D proches d'un plan 2-D, auto-encodeur linéaire = ACP à 2 unités de code) : **92,5 % d'anomalies détectées** pour **0,8 % de fausses alarmes** sur les données normales. Usages : fraude, maintenance prédictive, intrusion réseau, défauts en production.
+
+---
+
+## IV.11 Visualisation et apprentissage auto-supervisé (diapos 123–127)
+
+### Voir les données : ACP vs t-SNE / UMAP
+
+Sur 1 797 chiffres manuscrits (8×8 = 64 dimensions), la projection **ACP** (linéaire) mélange les classes ; **t-SNE** (2008) et **UMAP** (2018) (non linéaires) font apparaître des groupes nets : ils gardent les **plus proches voisins** de chaque point proches, comme une SOM mais **continue et sans grille**. **Attention** : la **taille des groupes** et les **distances entre groupes** ne sont **pas interprétables**.
+
+### Apprentissage auto-supervisé : les données s'étiquettent elles-mêmes
+
+- **Cacher et prédire** : **GPT** prédit le mot suivant ; **BERT** remplit des mots masqués ; **MAE** reconstruit des morceaux d'image masqués. *L'étiquette est un morceau des données elles-mêmes.*
+- **Contrastif (SimCLR, 2020)** : deux augmentations aléatoires (recadrage, couleur…) d'une même image doivent avoir des **embeddings proches** (on les rapproche), tandis que les autres images sont **repoussées**. (Perte usuelle, à vérifier : ℓ = −log \[ exp(sim(z\_i,z\_j)/τ) / Σ\_{k≠i} exp(sim(z\_i,z\_k)/τ) \].)
+- **Ensuite** : *fine-tuning* avec quelques étiquettes. On apprend sans étiquettes d'abord, on adapte avec peu d'étiquettes, à l'échelle de milliards d'exemples.
+
+### Clustering profond
+
+(1) **Pré-entraîner** un auto-encodeur pour obtenir un embedding compact ; (2) **k-means** dans l'espace d'embedding (prototypes initiaux) ; (3) **affiner les deux** : durcir les affectations souples et mettre à jour l'encodeur pour que les groupes se resserrent. Exemples : **DEC** (Xie et al. 2016), SwAV, DINO, SOM profondes empilées (équipe du cours). **Héritiers de k-means et de la SOM : des prototypes, mais dans un espace appris.**
+
+### Panorama de l'apprentissage non supervisé aujourd'hui
+
+Auto-encodeurs et VAE (compresser, générer) ; **GAN** (générateur contre discriminateur) ; **modèles de diffusion** (apprendre à retirer le bruit pas à pas : les générateurs d'images actuels) ; **auto-supervisé** (tâche inventée à partir des données brutes) ; **clustering profond** ; **modèles de fondation** (les LLM sont pré-entraînés sur du texte brut, sans étiquettes ; Partie V). Fil commun : **extraire de la structure des données sans étiquettes**.
+
+---
+
+## IV.12 Choisir, évaluer et appliquer (diapos 128–132)
+
+### Les méthodes compétitives en un coup d'œil
+
+| Méthode | Nombre d'unités | Topologie | Qui apprend ? | Idéal pour |
+| --- | --- | --- | --- | --- |
+| **k-means** | fixe | aucune | le gagnant seul | clustering simple et rapide |
+| **SOM** | fixe | **imposée** (grille 1-D / 2-D) | gagnant + voisins sur la grille | visualisation, projection |
+| **Neural Gas** | fixe | **apprise** (arêtes) | toutes les unités, par rang | faible distorsion, robuste |
+| **Growing NG** | croît / décroît | apprise (arêtes) | gagnant + voisins | forme et taille inconnues |
+| **ART** | croît (vigilance) | aucune | le gagnant s'il est vigilant | apprentissage continu, en ligne |
+
+De haut en bas : **moins de structure imposée, plus de structure apprise**.
+
+### Sans étiquettes, comment savoir que ça a marché ?
+
+- **Critères internes** : erreur de quantification (inertie), **silhouette** (à vérifier : s = (b − a)/max(a, b), a = distance moyenne intra-groupe, b = distance moyenne au groupe voisin le plus proche), erreur topographique.
+- **Visualisation** : projections 2-D, U-matrix, plans de composantes.
+- **Stabilité** : relancer avec d'autres graines ou sous-échantillons : le résultat est-il similaire ?
+- **Vérification externe** : quelques étiquettes (**ARI, NMI**) ou utilité pour une tâche en aval.
+- **Méthode du coude (*elbow*)** : tracer l'inertie de k-means en fonction de K ; la courbe se **coude** au bon K (K = 3 dans l'exemple : l'inertie chute de 2000 à 250 environ puis stagne).
+
+### Applications
+
+| Application | Méthodes typiques | Exemples |
+| --- | --- | --- |
+| Segmentation | k-means, SOM | profils clients, segments de marché, groupes de patients |
+| Exploration et visualisation | SOM, ACP, t-SNE / UMAP | cartes socio-économiques, biologie unicellulaire |
+| Compression | k-means / quantification vectorielle, auto-encodeurs | palettes de couleurs, *codebooks* de parole |
+| Détection d'anomalies | auto-encodeurs, distance aux prototypes | fraude, maintenance prédictive, intrusion |
+| Organisation de documents et d'images | SOM, embeddings + clustering | recherche, recommandation, dédoublonnage |
+| Topologie et forme | Neural Gas, GNG | reconstruction 3-D, cartes de robots |
+| Pré-entraînement | auto-supervisé | LLM, modèles de fondation en vision |
+
+### Quelle méthode pour quel objectif ?
+
+| Je veux… | Essayer | Conseil |
+| --- | --- | --- |
+| visualiser des données de grande dimension | SOM, ACP, t-SNE / UMAP | la SOM donne une carte stable avec prototypes |
+| trouver des groupes, K connu | k-means, Neural Gas | lancer plusieurs initialisations |
+| trouver des groupes, K inconnu | GNG, ART, k-means + coude / silhouette | vérifier la stabilité du résultat |
+| réduire la dimension, compresser | ACP (Oja, GHA), auto-encodeur, VQ | essayer le linéaire d'abord, puis le non linéaire |
+| détecter des anomalies | auto-encodeur, distance aux prototypes | entraîner sur données normales uniquement |
+| apprendre sur un flux de données | k-means en ligne, ART, GNG | surveiller la dérive des données |
+| préparer des caractéristiques pour une tâche ultérieure | auto-supervisé | *fine-tuning* avec peu d'étiquettes |
+
+---
+
+## IV.13 Quiz de la Partie IV avec corrigé
+
+1. **Pourquoi la règle de Hebb diverge-t-elle, et comment Oja corrige-t-il ?** Hebb : Δw = α y x ne peut que faire croître ||w|| (la norme croît exponentiellement). Oja ajoute le terme **−α y² w** qui fait revenir la norme à 1 ; à l'équilibre w est le vecteur propre principal de la matrice de corrélation (ACP en ligne).
+2. **Quel algorithme obtient-on quand le voisinage de la SOM se réduit au gagnant ?** **k-means en ligne** (apprentissage compétitif winner-take-all).
+3. **Qu'est-ce qu'une unité morte, et quelles méthodes l'évitent ?** Un prototype initialisé loin des données qui ne gagne jamais, donc n'apprend jamais. Évitée par la **SOM** et le **Neural Gas** (les voisins / toutes les unités apprennent), le **GNG** et **ART** (nouvelles unités créées là où il faut), ou en initialisant sur des exemples.
+4. **Comment GNG décide-t-il où ajouter une unité ?** Au milieu de l'unité d'**erreur accumulée maximale** q et de son voisin d'erreur maximale g : w\_r = (w\_q + w\_g)/2.
+5. **Que contrôle la vigilance dans ART ?** Le **degré de ressemblance exigé** pour mettre à jour un prototype existant, donc la **taille et le nombre des catégories**.
+6. **Pourquoi un auto-encodeur à code très large n'apprend-il rien d'utile ?** Il peut recopier l'entrée (identité) sans compresser ni extraire de structure ; il faut une contrainte (goulot, bruit, parcimonie).
+
+---
+
+## IV.14 Idées à retenir et checklist (Partie IV)
+
+1. L'apprentissage non supervisé trouve de la **structure** dans des données non étiquetées et **a besoin de redondance**.
+2. **Hebb** renforce les connexions co-actives : avec **Oja / Sanger** il calcule l'**ACP** ; dans **Hopfield** il stocke des mémoires.
+3. L'apprentissage **compétitif** rapproche le gagnant de chaque exemple : **k-means en ligne**, quantification vectorielle.
+4. La **SOM** met aussi à jour les voisins du gagnant sur la grille : carte qui **préserve la topologie**, idéale pour la visualisation.
+5. **Neural Gas** apprend sa topologie ; **GNG** apprend sa taille ; **ART** apprend sans oublier.
+6. Les **auto-encodeurs** apprennent des codes non linéaires par reconstruction : compression, anomalies, génération (VAE).
+7. L'**auto-supervisé** généralise ces idées : les modèles de fondation apprennent sans étiquettes.
+8. Sans étiquettes, il faut une **évaluation soignée** : critères internes, visualisation, stabilité.
+
+À savoir refaire : (a) construire un RBF en 3 étapes et **dériver Wᵀ = Φ⁺D** ; (b) l'exercice **XOR avec 2 gaussiennes** ; (c) **une mise à jour LVQ1** et la différence LVQ1 / LVQ2.1 / GLVQ ; (d) **dériver l'équilibre d'Oja** (Rw = λw) ; (e) **k-means à la main** et sa moyenne courante ; (f) **une mise à jour de SOM** avec voisinage ; (g) l'algorithme **NG** (rang, exp(−k/λ), connexions et âges) et **GNG** (erreur accumulée, insertion) ; (h) les tests de vigilance **ART1 / ART2** ; (i) la perte du **VAE** ; (j) choisir la méthode adaptée à un objectif.
